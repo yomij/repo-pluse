@@ -188,14 +188,13 @@ def test_parse_slash_command_rejects_legacy_and_invalid_syntax():
     assert "topN" in bad_top_k.error
 
 
-def test_parse_message_command_supports_legacy_mentions_and_slash_passthrough():
+def test_parse_message_command_supports_bot_mentions_and_slash_passthrough():
     from repo_pulse.details.request_parser import parse_message_command
 
-    legacy_daily = parse_message_command(
+    mention_daily = parse_message_command(
         '<at user_id="ou_bot">Repo Pulse</at> 日榜 top 20',
         default_top_k=5,
         max_top_k=10,
-        allow_legacy_mention_commands=True,
         mentions=[
             {
                 "key": "@_user_1",
@@ -205,25 +204,10 @@ def test_parse_message_command_supports_legacy_mentions_and_slash_passthrough():
         ],
         bot_open_id="ou_bot",
     )
-    legacy_analyze = parse_message_command(
-        '<at user_id="ou_bot">Repo Pulse</at> openai/openai-python',
-        default_top_k=5,
-        max_top_k=10,
-        allow_legacy_mention_commands=True,
-        mentions=[
-            {
-                "key": "@_user_1",
-                "id": {"open_id": "ou_bot"},
-                "name": "Repo Pulse",
-            }
-        ],
-        bot_open_id="ou_bot",
-    )
-    slash_with_mention = parse_message_command(
+    mention_help = parse_message_command(
         '<at user_id="ou_bot">Repo Pulse</at> /help',
         default_top_k=5,
         max_top_k=10,
-        allow_legacy_mention_commands=True,
         mentions=[
             {
                 "key": "@_user_1",
@@ -233,18 +217,39 @@ def test_parse_message_command_supports_legacy_mentions_and_slash_passthrough():
         ],
         bot_open_id="ou_bot",
     )
+    mention_analyze = parse_message_command(
+        '<at user_id="ou_bot">Repo Pulse</at> openai/openai-python',
+        default_top_k=5,
+        max_top_k=10,
+        mentions=[
+            {
+                "key": "@_user_1",
+                "id": {"open_id": "ou_bot"},
+                "name": "Repo Pulse",
+            }
+        ],
+        bot_open_id="ou_bot",
+    )
+    slash_help = parse_message_command(
+        "/help",
+        default_top_k=5,
+        max_top_k=10,
+    )
 
-    assert legacy_daily.is_command is True
-    assert legacy_daily.command is not None
-    assert legacy_daily.command.kind == "daily"
-    assert legacy_daily.command.top_k == 10
-    assert legacy_analyze.is_command is True
-    assert legacy_analyze.command is not None
-    assert legacy_analyze.command.kind == "analyze"
-    assert legacy_analyze.command.argument == "openai/openai-python"
-    assert slash_with_mention.is_command is True
-    assert slash_with_mention.command is not None
-    assert slash_with_mention.command.kind == "help"
+    assert mention_daily.is_command is True
+    assert mention_daily.command is not None
+    assert mention_daily.command.kind == "daily"
+    assert mention_daily.command.top_k == 10
+    assert mention_help.is_command is True
+    assert mention_help.command is not None
+    assert mention_help.command.kind == "help"
+    assert mention_analyze.is_command is True
+    assert mention_analyze.command is not None
+    assert mention_analyze.command.kind == "analyze"
+    assert mention_analyze.command.argument == "openai/openai-python"
+    assert slash_help.is_command is True
+    assert slash_help.command is not None
+    assert slash_help.command.kind == "help"
 
 
 def test_parse_message_command_ignores_group_member_mentions():
@@ -254,7 +259,6 @@ def test_parse_message_command_ignores_group_member_mentions():
         '<at user_id="ou_user">张三</at> 日榜',
         default_top_k=5,
         max_top_k=10,
-        allow_legacy_mention_commands=True,
         mentions=[
             {
                 "key": "@_user_1",
@@ -269,14 +273,64 @@ def test_parse_message_command_ignores_group_member_mentions():
     assert result.command is None
 
 
-def test_parse_message_command_can_disable_legacy_mentions():
+def test_parse_message_command_rejects_hand_typed_bot_name_without_real_mention():
     from repo_pulse.details.request_parser import parse_message_command
 
     result = parse_message_command(
-        '<at user_id="ou_bot">Repo Pulse</at> 日榜',
+        "@Repo Pulse /help",
         default_top_k=5,
         max_top_k=10,
-        allow_legacy_mention_commands=False,
+        mentions=None,
+        bot_open_id="ou_bot",
+    )
+
+    assert result.is_command is False
+    assert result.command is None
+
+
+def test_parse_message_command_rejects_hand_typed_bot_name_with_bot_metadata():
+    from repo_pulse.details.request_parser import parse_message_command
+
+    result = parse_message_command(
+        "@Repo Pulse /help",
+        default_top_k=5,
+        max_top_k=10,
+        mentions=[
+            {
+                "key": "@_user_1",
+                "id": {"open_id": "ou_bot"},
+                "name": "Repo Pulse",
+            }
+        ],
+        bot_open_id="ou_bot",
+    )
+
+    assert result.is_command is False
+    assert result.command is None
+
+
+def test_parse_message_command_rejects_mention_tag_without_real_mention_metadata():
+    from repo_pulse.details.request_parser import parse_message_command
+
+    result = parse_message_command(
+        '<at user_id="ou_bot">Repo Pulse</at> /help',
+        default_top_k=5,
+        max_top_k=10,
+        mentions=None,
+        bot_open_id="ou_bot",
+    )
+
+    assert result.is_command is False
+    assert result.command is None
+
+
+def test_parse_message_command_rejects_mention_tag_without_id_with_bot_metadata():
+    from repo_pulse.details.request_parser import parse_message_command
+
+    result = parse_message_command(
+        "<at>Repo Pulse</at> /help",
+        default_top_k=5,
+        max_top_k=10,
         mentions=[
             {
                 "key": "@_user_1",
@@ -313,7 +367,10 @@ def test_build_help_text_lists_all_supported_commands():
         "[关于我介绍](https://example.feishu.cn/docx/about-me)"
         in help_text
     )
-    assert "@机器人" in help_text
+    assert "群聊请先真实 `@机器人` 再输入 slash 命令或 repo/url/keyword。" in help_text
+    assert "私聊可直接输入以上 slash 命令。" in help_text
+    assert "`@机器人` 只是占位符，请以群里的实际机器人显示名为准。" in help_text
+    assert "兼容模式" not in help_text
 
 
 def test_build_help_text_omits_about_section_without_doc_url():
@@ -675,7 +732,7 @@ async def test_orchestrator_logs_cache_hit_without_research(caplog):
         doc_url="https://feishu.cn/docx/cached",
         summary_markdown="cached markdown",
         citations_json="[]",
-        updated_at=datetime(2026, 4, 15, 10, 0, tzinfo=timezone.utc),
+        updated_at=datetime.now(timezone.utc) - timedelta(hours=1),
     )
     orchestrator = DetailOrchestrator(
         detail_repository=_FakeDetailRepository(seeded={"acme/agent": cached}),

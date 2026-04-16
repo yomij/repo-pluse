@@ -127,6 +127,7 @@ class FeishuLongConnectionClient:
         payload_message = {
             "message_id": getattr(message, "message_id", None),
             "text": text,
+            "chat_type": getattr(message, "chat_type", None),
         }
         mentions = _plainify_mentions(getattr(message, "mentions", None))
         if mentions:

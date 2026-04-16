@@ -40,7 +40,7 @@ uv run uvicorn repo_pulse.main:create_app --factory --host 0.0.0.0 --port 9527
 
 ## Commands
 
-飞书群里默认同时支持 slash 文本命令和 `@机器人` 形式的旧触发：
+飞书群里默认仅在真实 `@机器人` 后处理命令；私聊可直接输入 slash 命令：
 
 - `/a <repo|url|keyword>` 或 `/analyze <repo|url|keyword>`：生成项目详情
 - `/d [topN]` 或 `/daily [topN]`：触发日榜
@@ -49,11 +49,11 @@ uv run uvicorn repo_pulse.main:create_app --factory --host 0.0.0.0 --port 9527
 
 说明：
 
-- 也支持 `@机器人 日榜 [topN]`、`@机器人 周榜 [topN]`、`@机器人 <repo|url|keyword>` 这种旧触发
+- 群聊支持 `@机器人 /help`、`@机器人 日榜 [topN]`、`@机器人 <repo|url|keyword>`
 - 上面的 `@机器人` 只是占位符，请以群里的实际机器人显示名为准
 - 所有已识别命令执行时（如 `/a`、`/d`、`/w`、`/h` 及其长别名），机器人都会先给原消息加一个 `Typing` 表情，完成后自动移除
 - 默认使用飞书官方 SDK 长连接接收群消息；如需临时回退 HTTP 回调，可设置 `FEISHU_LONG_CONNECTION_ENABLED=false`
-- 如需关闭旧的 `@机器人` 兼容模式，可设置 `FEISHU_ALLOW_LEGACY_MENTION_COMMANDS=false`
+- 如需放开群聊里的裸 slash 命令，可设置 `FEISHU_GROUP_REQUIRE_BOT_MENTION=false`；该开关不会把群聊里的裸 `日榜` / 仓库关键词文本也一起放开
 - 榜单结果默认启用短期缓存：日榜 `2h`、周榜 `24h`，可通过 `DAILY_DIGEST_CACHE_TTL_SECONDS` / `WEEKLY_DIGEST_CACHE_TTL_SECONDS` 调整
 - 项目详情默认缓存 `24h`，可通过 `DETAIL_CACHE_TTL_SECONDS` 调整；过期后会重新研究并复用已有飞书文档
 
@@ -103,7 +103,6 @@ uv run python -m repo_pulse.cli select-chat-id --name repo
 
 - `create_app()` 启动时自动创建 runtime container
 - 初始化数据库与日报调度器
-- 调度器默认按 `Asia/Shanghai` 解释 cron，保证 `9:30` 表示北京时间 `09:30`
 - `/internal/run-digest` 可直接触发完整日报链路
 - 日报会通过飞书 `post + md` 发送更稳定的富文本摘要（含 emoji / 列表 / 链接）
 - 日报里“一句话”会优先翻成中文后再推送
@@ -151,9 +150,7 @@ DASHSCOPE_STRUCTURER_RETRY_BACKOFF_SECONDS=1
 
 - `FEISHU_CHAT_IDS`（可选）：默认定时广播群列表，使用逗号分隔；配置后日报/周榜会按该列表逐群推送
 - `FEISHU_ABOUT_DOC_URL`（可选）：`/h` 帮助中“关于我介绍”的目标文档链接；留空时不展示该入口
-- `SCHEDULER_TIMEZONE`（`Asia/Shanghai`）：调度器、时间展示与 GitHub 查询边界日期解释时使用的 IANA 时区
-- `DAILY_DIGEST_CRON`（`30 9 * * 1-5`）：日报 cron 表达式，默认工作日北京时间 `09:30`
-- `WEEKLY_DIGEST_CRON`（`30 9 * * 1`）：周榜 cron 表达式，默认周一北京时间 `09:30`
+- `FEISHU_GROUP_REQUIRE_BOT_MENTION`（`true`）：群聊是否要求先真实 `@` 机器人再处理命令；设为 `false` 时仅放开群聊 slash 命令直输
 - `DETAIL_CACHE_TTL_SECONDS`（`86400`）：项目详情缓存 TTL（秒）
 - `DASHSCOPE_RESEARCH_MAX_RETRIES`（`2`）：研究报告阶段的最大重试次数
 - `DASHSCOPE_RESEARCH_RETRY_BACKOFF_SECONDS`（`1`）：研究报告阶段重试退避基数（秒）

@@ -12,12 +12,13 @@ class _FakeContainer:
         self.payloads.append(payload)
 
 
-def _receive_event(content, message_type="text", mentions=None):
+def _receive_event(content, message_type="text", mentions=None, chat_type="group"):
     return SimpleNamespace(
         event=SimpleNamespace(
             message=SimpleNamespace(
                 message_id="om-user-message",
                 chat_id="oc-chat",
+                chat_type=chat_type,
                 message_type=message_type,
                 content=content,
                 mentions=mentions,
@@ -49,6 +50,7 @@ async def test_long_connection_message_event_is_adapted_to_runtime_payload():
                 "message": {
                     "message_id": "om-user-message",
                     "text": "/a openai/openai-python",
+                    "chat_type": "group",
                 },
             }
         }
@@ -88,6 +90,7 @@ async def test_long_connection_message_event_preserves_mentions():
                 "message": {
                     "message_id": "om-user-message",
                     "text": '<at user_id="ou_bot">Repo Pulse</at> 日榜',
+                    "chat_type": "group",
                     "mentions": [
                         {
                             "key": "@_user_1",
@@ -100,6 +103,36 @@ async def test_long_connection_message_event_preserves_mentions():
                             "tenant_key": "tenant-key",
                         }
                     ],
+                },
+            }
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_long_connection_message_event_preserves_chat_type():
+    from repo_pulse.feishu.ws_client import FeishuLongConnectionClient
+
+    container = _FakeContainer()
+    client = FeishuLongConnectionClient(
+        app_id="cli-id",
+        app_secret="secret",
+        container=container,
+        ws_client_factory=lambda **kwargs: SimpleNamespace(start=lambda: None),
+    )
+
+    await client.handle_message_event(
+        _receive_event(json.dumps({"text": "/help"}), chat_type="p2p")
+    )
+
+    assert container.payloads == [
+        {
+            "event": {
+                "chat_id": "oc-chat",
+                "message": {
+                    "message_id": "om-user-message",
+                    "text": "/help",
+                    "chat_type": "p2p",
                 },
             }
         }

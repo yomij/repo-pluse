@@ -27,7 +27,8 @@ def test_settings_parse_csv_lists_and_defaults(monkeypatch):
     assert settings.feishu_chat_ids == ["oc_group_a", "oc_group_b"]
     assert settings.feishu_doc_folder_token == ""
     assert settings.feishu_long_connection_enabled is True
-    assert settings.feishu_allow_legacy_mention_commands is True
+    assert settings.feishu_group_require_bot_mention is True
+    assert not hasattr(settings, "feishu_allow_legacy_mention_commands")
     assert settings.feishu_event_encrypt_key == ""
     assert settings.feishu_event_verification_token == ""
     assert settings.research_provider == "dashscope"
@@ -46,7 +47,6 @@ def test_settings_parse_csv_lists_and_defaults(monkeypatch):
     assert settings.detail_cache_ttl_seconds == 86400
     assert settings.daily_digest_cache_ttl_seconds == 7200
     assert settings.weekly_digest_cache_ttl_seconds == 86400
-    assert settings.scheduler_timezone == "Asia/Shanghai"
     assert settings.topic_include == ["ai", "llm", "agents", "devtools"]
 
 
@@ -71,11 +71,11 @@ def test_settings_allow_missing_feishu_chat_ids(monkeypatch):
     assert "feishu_chat_id" not in settings.model_dump()
 
 
-def test_settings_allow_overriding_scheduler_timezone(monkeypatch):
+def test_settings_can_disable_group_require_bot_mention_from_env(monkeypatch):
     monkeypatch.setenv("FEISHU_APP_ID", "cli_app_id")
     monkeypatch.setenv("FEISHU_APP_SECRET", "cli_app_secret")
-    monkeypatch.setenv("SCHEDULER_TIMEZONE", "UTC")
+    monkeypatch.setenv("FEISHU_GROUP_REQUIRE_BOT_MENTION", "false")
 
     settings = Settings(_env_file=None)
 
-    assert settings.scheduler_timezone == "UTC"
+    assert settings.feishu_group_require_bot_mention is False

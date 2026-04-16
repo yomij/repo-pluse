@@ -3,7 +3,6 @@ import logging
 import time
 from typing import Any, Optional, Sequence
 from uuid import uuid4
-from zoneinfo import ZoneInfo
 
 from repo_pulse.config import Settings, get_settings
 from repo_pulse.db import build_engine, init_db
@@ -73,7 +72,7 @@ class DetailRequestHandler:
         digest_dispatcher=None,
         manual_digest_default_top_k: int = 5,
         manual_digest_max_top_k: int = 10,
-        allow_legacy_mention_commands: bool = True,
+        group_require_bot_mention: bool = True,
     ):
         self.github_client = github_client
         self.detail_orchestrator = detail_orchestrator
@@ -83,7 +82,7 @@ class DetailRequestHandler:
         self.manual_digest_default_top_k = manual_digest_default_top_k
         self.manual_digest_max_top_k = manual_digest_max_top_k
         self.about_doc_url = about_doc_url
-        self.allow_legacy_mention_commands = allow_legacy_mention_commands
+        self.group_require_bot_mention = group_require_bot_mention
         self._bot_open_id: Optional[str] = None
         self._bot_identity_loaded = False
 
@@ -96,14 +95,29 @@ class DetailRequestHandler:
             or self.feishu_client.chat_id
         )
         message_text = extract_message_text(message)
+        if not message_text:
+            return
+
         message_id = message.get("message_id")
-        bot_open_id = await self._get_bot_open_id_for_message(message_text, message)
+        chat_type = str(message.get("chat_type") or "").strip().lower()
+        is_private_chat = chat_type == "p2p"
+        mentions = message.get("mentions")
+        bot_open_id = ""
+
+        if not is_private_chat and self.group_require_bot_mention:
+            bot_open_id = await self._get_bot_open_id()
+            if not bot_open_id:
+                return
+            if _find_runtime_bot_mention(mentions, bot_open_id) is None:
+                return
+        elif mentions:
+            bot_open_id = await self._get_bot_open_id()
+
         command_result = parse_message_command(
             message_text,
             default_top_k=self.manual_digest_default_top_k,
             max_top_k=self.manual_digest_max_top_k,
-            allow_legacy_mention_commands=self.allow_legacy_mention_commands,
-            mentions=message.get("mentions"),
+            mentions=mentions,
             bot_open_id=bot_open_id,
         )
         if not command_result.is_command:
@@ -259,13 +273,6 @@ class DetailRequestHandler:
                         exc,
                     )
 
-    async def _get_bot_open_id_for_message(self, message_text: str, message: dict[str, Any]) -> str:
-        if not self.allow_legacy_mention_commands:
-            return ""
-        if not _looks_like_legacy_mention_message(message_text, message.get("mentions")):
-            return ""
-        return await self._get_bot_open_id()
-
     async def _get_bot_open_id(self) -> str:
         if self._bot_identity_loaded:
             return self._bot_open_id or ""
@@ -397,7 +404,6 @@ class RuntimeContainer:
 
 def create_runtime_container(settings: Optional[Settings] = None) -> RuntimeContainer:
     effective_settings = settings or get_settings()
-    scheduler_timezone = ZoneInfo(effective_settings.scheduler_timezone)
     default_feishu_chat_ids = _resolve_default_feishu_chat_ids(effective_settings)
     primary_feishu_receive_id = default_feishu_chat_ids[0] if default_feishu_chat_ids else ""
     engine = build_engine(effective_settings.database_url)
@@ -415,7 +421,7 @@ def create_runtime_container(settings: Optional[Settings] = None) -> RuntimeCont
         app_secret=effective_settings.feishu_app_secret,
         folder_token=effective_settings.feishu_doc_folder_token,
     )
-    message_builder = MarkdownDigestBuilder(effective_settings.scheduler_timezone)
+    message_builder = MarkdownDigestBuilder()
     summary_localizer = _build_summary_localizer(effective_settings)
 
     research_provider, resource_closers = _build_research_provider(effective_settings)
@@ -436,7 +442,6 @@ def create_runtime_container(settings: Optional[Settings] = None) -> RuntimeCont
         discovery_service=DiscoveryService(
             client=github_client,
             include_topics=effective_settings.topic_include,
-            scheduler_timezone=effective_settings.scheduler_timezone,
         ),
         snapshot_repository=snapshot_repository,
         detail_repository=detail_repository,
@@ -489,7 +494,6 @@ def create_runtime_container(settings: Optional[Settings] = None) -> RuntimeCont
         daily_job=daily_digest_job,
         weekly_cron=effective_settings.weekly_digest_cron,
         weekly_job=weekly_digest_job,
-        scheduler_timezone=scheduler_timezone,
     )
 
     detail_handler = DetailRequestHandler(
@@ -501,7 +505,7 @@ def create_runtime_container(settings: Optional[Settings] = None) -> RuntimeCont
         manual_digest_default_top_k=effective_settings.manual_digest_default_top_k,
         manual_digest_max_top_k=effective_settings.manual_digest_max_top_k,
         about_doc_url=effective_settings.feishu_about_doc_url,
-        allow_legacy_mention_commands=effective_settings.feishu_allow_legacy_mention_commands,
+        group_require_bot_mention=effective_settings.feishu_group_require_bot_mention,
     )
     container = RuntimeContainer(
         engine=engine,
@@ -531,14 +535,35 @@ def _resolve_default_feishu_chat_ids(settings: Settings) -> list[str]:
     ]
 
 
-def _looks_like_legacy_mention_message(
-    message_text: str,
+def _find_runtime_bot_mention(
     mentions: Optional[Sequence[dict[str, Any]]],
-) -> bool:
-    if mentions:
-        return True
-    normalized = (message_text or "").lstrip()
-    return normalized.startswith(("<at", "@", "＠"))
+    bot_open_id: str,
+) -> Optional[dict[str, Any]]:
+    normalized_bot_open_id = (bot_open_id or "").strip()
+    if not normalized_bot_open_id or not mentions:
+        return None
+
+    for mention in mentions:
+        if normalized_bot_open_id in _mention_ids(mention):
+            return mention
+    return None
+
+
+def _mention_ids(mention: dict[str, Any]) -> set[str]:
+    mention_ids: set[str] = set()
+    mention_id = mention.get("id")
+    if isinstance(mention_id, dict):
+        for key in ("open_id", "union_id", "user_id"):
+            value = mention_id.get(key)
+            if isinstance(value, str) and value.strip():
+                mention_ids.add(value.strip())
+
+    for key in ("open_id", "union_id", "user_id"):
+        value = mention.get(key)
+        if isinstance(value, str) and value.strip():
+            mention_ids.add(value.strip())
+
+    return mention_ids
 
 
 def _extract_bot_open_id(bot_info: Any) -> str:

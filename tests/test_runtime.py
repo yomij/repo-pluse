@@ -1052,6 +1052,7 @@ async def test_runtime_container_handles_event_and_replies_with_detail_summary()
             "event": {
                 "message": {
                     "text": "/a acme agent",
+                    "chat_type": "p2p",
                     "message_id": "om-msg-1",
                 },
                 "chat_id": "chat-1",
@@ -1123,6 +1124,7 @@ async def test_runtime_container_handles_analyze_command_with_github_url():
             "event": {
                 "message": {
                     "text": "/a https://github.com/openai/openai-python",
+                    "chat_type": "p2p",
                     "message_id": "om-msg-url",
                 },
                 "chat_id": "chat-url",
@@ -1164,7 +1166,11 @@ async def test_runtime_container_rejects_invalid_direct_full_name_before_researc
     await handler.handle_event(
         {
             "event": {
-                "message": {"text": "/a missing/repo", "message_id": "om-invalid"},
+                "message": {
+                    "text": "/a missing/repo",
+                    "chat_type": "p2p",
+                    "message_id": "om-invalid",
+                },
                 "chat_id": "chat-invalid",
             }
         }
@@ -1202,7 +1208,11 @@ async def test_runtime_container_handles_direct_full_name_resolve_error():
     await handler.handle_event(
         {
             "event": {
-                "message": {"text": "/a acme/agent", "message_id": "om-direct-error"},
+                "message": {
+                    "text": "/a acme/agent",
+                    "chat_type": "p2p",
+                    "message_id": "om-direct-error",
+                },
                 "chat_id": "chat-direct-error",
             }
         }
@@ -1250,7 +1260,11 @@ async def test_runtime_logs_detail_request_and_passes_research_run_id(caplog):
     await handler.handle_event(
         {
             "event": {
-                "message": {"text": "/a acme agent", "message_id": "om-msg-1"},
+                "message": {
+                    "text": "/a acme agent",
+                    "chat_type": "p2p",
+                    "message_id": "om-msg-1",
+                },
                 "chat_id": "chat-1",
             }
         }
@@ -1510,6 +1524,7 @@ async def test_runtime_container_handles_manual_digest_command_with_clamped_top_
             "event": {
                 "message": {
                     "text": "/d 20",
+                    "chat_type": "p2p",
                     "message_id": "om-msg-2",
                 },
                 "chat_id": "chat-2",
@@ -1550,6 +1565,7 @@ async def test_runtime_container_handles_help_command_with_help_text():
             "event": {
                 "message": {
                     "text": "/h",
+                    "chat_type": "p2p",
                     "message_id": "om-msg-help",
                 },
                 "chat_id": "chat-help",
@@ -1594,6 +1610,7 @@ async def test_runtime_container_handles_weekly_digest_command_with_processing_r
             "event": {
                 "message": {
                     "text": "/w 8",
+                    "chat_type": "p2p",
                     "message_id": "om-msg-weekly",
                 },
                 "chat_id": "chat-weekly",
@@ -1604,6 +1621,78 @@ async def test_runtime_container_handles_weekly_digest_command_with_processing_r
     assert digest_dispatcher.calls == [("weekly", "chat-weekly", 8)]
     assert feishu.reactions_added == [("om-msg-weekly", "Typing")]
     assert feishu.reactions_removed == [("om-msg-weekly", "reaction-1")]
+
+
+@pytest.mark.asyncio
+async def test_runtime_container_ignores_group_slash_command_without_bot_mention():
+    from repo_pulse.runtime import DetailRequestHandler
+
+    class _UnusedGitHubClient:
+        async def search_repositories(self, query, per_page=1):
+            del query, per_page
+            return []
+
+    feishu = _FakeFeishuClient()
+    digest_dispatcher = _FakeDigestDispatcher()
+    handler = DetailRequestHandler(
+        github_client=_UnusedGitHubClient(),
+        detail_orchestrator=_FakeDetailOrchestrator(),
+        feishu_client=feishu,
+        digest_dispatcher=digest_dispatcher,
+        about_doc_url=_ABOUT_DOC_URL,
+    )
+
+    await handler.handle_event(
+        {
+            "event": {
+                "message": {
+                    "text": "/help",
+                    "chat_type": "group",
+                    "message_id": "om-msg-group-help",
+                },
+                "chat_id": "chat-group",
+            }
+        }
+    )
+
+    assert digest_dispatcher.calls == []
+    assert feishu.sent_posts == []
+    assert feishu.sent_texts == []
+
+
+@pytest.mark.asyncio
+async def test_runtime_container_allows_private_slash_command_without_bot_mention():
+    from repo_pulse.runtime import DetailRequestHandler
+
+    class _UnusedGitHubClient:
+        async def search_repositories(self, query, per_page=1):
+            del query, per_page
+            return []
+
+    feishu = _FakeFeishuClient()
+    digest_dispatcher = _FakeDigestDispatcher()
+    handler = DetailRequestHandler(
+        github_client=_UnusedGitHubClient(),
+        detail_orchestrator=_FakeDetailOrchestrator(),
+        feishu_client=feishu,
+        digest_dispatcher=digest_dispatcher,
+        about_doc_url=_ABOUT_DOC_URL,
+    )
+
+    await handler.handle_event(
+        {
+            "event": {
+                "message": {
+                    "text": "/w 8",
+                    "chat_type": "p2p",
+                    "message_id": "om-msg-private-weekly",
+                },
+                "chat_id": "chat-private",
+            }
+        }
+    )
+
+    assert digest_dispatcher.calls == [("weekly", "chat-private", 8)]
 
 
 @pytest.mark.asyncio
@@ -1635,6 +1724,7 @@ async def test_runtime_container_handles_legacy_mention_daily_command():
             "event": {
                 "message": {
                     "text": '<at user_id="ou_bot">Repo Pulse</at> 日榜 top 20',
+                    "chat_type": "group",
                     "message_id": "om-msg-legacy",
                     "mentions": [
                         {
@@ -1687,6 +1777,7 @@ async def test_runtime_container_ignores_group_member_mention_commands():
             "event": {
                 "message": {
                     "text": '<at user_id="ou_user">张三</at> 日榜',
+                    "chat_type": "group",
                     "message_id": "om-msg-user-mention",
                     "mentions": [
                         {
@@ -1739,6 +1830,7 @@ async def test_runtime_container_replies_to_invalid_bot_mention_command_without_
             "event": {
                 "message": {
                     "text": '<at user_id="ou_bot">Repo Pulse</at> /unknown',
+                    "chat_type": "group",
                     "message_id": "om-msg-invalid-command",
                     "mentions": [
                         {
@@ -1765,7 +1857,7 @@ async def test_runtime_container_replies_to_invalid_bot_mention_command_without_
 
 
 @pytest.mark.asyncio
-async def test_runtime_container_can_disable_legacy_mention_commands():
+async def test_runtime_container_can_disable_group_mention_requirement():
     from repo_pulse.runtime import DetailRequestHandler
 
     class _UnusedGitHubClient:
@@ -1786,7 +1878,7 @@ async def test_runtime_container_can_disable_legacy_mention_commands():
         feishu_client=feishu,
         digest_dispatcher=digest_dispatcher,
         about_doc_url=_ABOUT_DOC_URL,
-        allow_legacy_mention_commands=False,
+        group_require_bot_mention=False,
     )
 
     await handler.handle_event(
@@ -1794,6 +1886,7 @@ async def test_runtime_container_can_disable_legacy_mention_commands():
             "event": {
                 "message": {
                     "text": '<at user_id="ou_bot">Repo Pulse</at> 日榜',
+                    "chat_type": "group",
                     "message_id": "om-msg-legacy-off",
                     "mentions": [
                         {
@@ -1810,11 +1903,54 @@ async def test_runtime_container_can_disable_legacy_mention_commands():
 
     assert github.calls == []
     assert orchestrator.calls == []
-    assert digest_dispatcher.calls == []
+    assert digest_dispatcher.calls == [("daily", "chat-legacy-off", 5)]
     assert feishu.sent_texts == []
     assert feishu.sent_posts == []
-    assert feishu.reactions_added == []
-    assert feishu.reactions_removed == []
+    assert feishu.reactions_added == [("om-msg-legacy-off", "Typing")]
+    assert feishu.reactions_removed == [("om-msg-legacy-off", "reaction-1")]
+
+
+@pytest.mark.asyncio
+async def test_runtime_container_allows_group_slash_command_when_group_mention_requirement_disabled():
+    from repo_pulse.runtime import DetailRequestHandler
+
+    class _UnusedGitHubClient:
+        async def search_repositories(self, query, per_page=1):
+            del query, per_page
+            return []
+
+    feishu = _FakeFeishuClient()
+    digest_dispatcher = _FakeDigestDispatcher()
+    handler = DetailRequestHandler(
+        github_client=_UnusedGitHubClient(),
+        detail_orchestrator=_FakeDetailOrchestrator(),
+        feishu_client=feishu,
+        digest_dispatcher=digest_dispatcher,
+        manual_digest_default_top_k=5,
+        manual_digest_max_top_k=10,
+        about_doc_url=_ABOUT_DOC_URL,
+        group_require_bot_mention=False,
+    )
+
+    await handler.handle_event(
+        {
+            "event": {
+                "message": {
+                    "text": "/help",
+                    "chat_type": "group",
+                    "message_id": "om-msg-group-help-mention-off",
+                },
+                "chat_id": "chat-group-help-mention-off",
+            }
+        }
+    )
+
+    assert digest_dispatcher.calls == []
+    assert feishu.sent_posts and feishu.sent_posts[0][0] == "chat-group-help-mention-off"
+    assert feishu.sent_posts[0][1] == "🤖 使用帮助"
+    assert feishu.sent_texts == []
+    assert feishu.reactions_added == [("om-msg-group-help-mention-off", "Typing")]
+    assert feishu.reactions_removed == [("om-msg-group-help-mention-off", "reaction-1")]
 
 
 @pytest.mark.asyncio
@@ -1845,6 +1981,7 @@ async def test_runtime_container_removes_reaction_even_when_detail_generation_fa
             "event": {
                 "message": {
                     "text": "/a acme agent",
+                    "chat_type": "p2p",
                     "message_id": "om-msg-fail",
                 },
                 "chat_id": "chat-fail",
@@ -1890,6 +2027,7 @@ async def test_runtime_container_keeps_typing_reaction_visible_for_minimum_durat
             "event": {
                 "message": {
                     "text": "/a acme agent",
+                    "chat_type": "p2p",
                     "message_id": "om-msg-visible",
                 },
                 "chat_id": "chat-visible",
@@ -2085,10 +2223,10 @@ def test_create_runtime_container_can_disable_feishu_long_connection():
     )
 
     assert container.long_connection_client is None
-    assert container.detail_handler.allow_legacy_mention_commands is True
+    assert container.detail_handler.group_require_bot_mention is True
 
 
-def test_create_runtime_container_can_disable_legacy_mention_commands():
+def test_create_runtime_container_can_disable_group_mention_requirement():
     from repo_pulse.config import Settings
     from repo_pulse.runtime import create_runtime_container
 
@@ -2099,53 +2237,12 @@ def test_create_runtime_container_can_disable_legacy_mention_commands():
             feishu_chat_ids=["chat-id"],
             feishu_about_doc_url=_ABOUT_DOC_URL,
             database_url="sqlite:///:memory:",
-            feishu_allow_legacy_mention_commands=False,
+            feishu_group_require_bot_mention=False,
             _env_file=None,
         )
     )
 
-    assert container.detail_handler.allow_legacy_mention_commands is False
-
-
-def test_create_runtime_container_passes_scheduler_timezone(monkeypatch):
-    from repo_pulse.config import Settings
-    from repo_pulse.runtime import create_runtime_container
-
-    captured = {}
-
-    class _FakeScheduler:
-        def start(self):
-            return None
-
-        def shutdown(self, wait=False):
-            del wait
-            return None
-
-        def get_jobs(self):
-            return []
-
-    def fake_build_digest_scheduler(**kwargs):
-        captured.update(kwargs)
-        return _FakeScheduler()
-
-    monkeypatch.setattr(
-        "repo_pulse.runtime.build_digest_scheduler",
-        fake_build_digest_scheduler,
-    )
-
-    create_runtime_container(
-        Settings(
-            feishu_app_id="app-id",
-            feishu_app_secret="app-secret",
-            feishu_chat_ids=["chat-id"],
-            feishu_about_doc_url=_ABOUT_DOC_URL,
-            database_url="sqlite:///:memory:",
-            scheduler_timezone="Asia/Shanghai",
-            _env_file=None,
-        )
-    )
-
-    assert str(captured["scheduler_timezone"]) == "Asia/Shanghai"
+    assert container.detail_handler.group_require_bot_mention is False
 
 
 def test_create_runtime_container_passes_detail_cache_and_evidence_limits(monkeypatch):

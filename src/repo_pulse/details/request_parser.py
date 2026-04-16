@@ -13,7 +13,6 @@ _LEADING_MENTION_TAG_PATTERN = re.compile(
     r"^\s*(<at\b[^>]*>(.*?)</at>)",
     re.IGNORECASE,
 )
-_LEADING_PLAIN_MENTION_PATTERN = re.compile(r"^\s*[@＠][^\s]+")
 _MENTION_TAG_ID_PATTERN = re.compile(
     r"\b(?:user_id|open_id|union_id)=([\"'])(.*?)\1",
     re.IGNORECASE,
@@ -108,7 +107,6 @@ def parse_message_command(
     text: str,
     default_top_k: int,
     max_top_k: int,
-    allow_legacy_mention_commands: bool = True,
     mentions: Optional[Sequence[Mapping[str, Any]]] = None,
     bot_open_id: str = "",
 ) -> MessageCommandParseResult:
@@ -124,19 +122,16 @@ def parse_message_command(
             error=slash_result.error,
         )
 
-    if not allow_legacy_mention_commands:
-        return MessageCommandParseResult(is_command=False)
-
-    legacy_body = _strip_leading_bot_mention(
+    mention_prefixed_body = _strip_leading_bot_mention(
         text,
         mentions=mentions,
         bot_open_id=bot_open_id,
     )
-    if not legacy_body:
+    if not mention_prefixed_body:
         return MessageCommandParseResult(is_command=False)
 
     slash_after_mention = parse_slash_command(
-        legacy_body,
+        mention_prefixed_body,
         default_top_k=default_top_k,
         max_top_k=max_top_k,
     )
@@ -147,7 +142,7 @@ def parse_message_command(
             error=slash_after_mention.error,
         )
 
-    tokens = legacy_body.split()
+    tokens = mention_prefixed_body.split()
     if not tokens:
         return MessageCommandParseResult(is_command=False)
 
@@ -178,7 +173,7 @@ def parse_message_command(
 
     return MessageCommandParseResult(
         is_command=True,
-        command=SlashCommand(kind="analyze", argument=legacy_body),
+        command=SlashCommand(kind="analyze", argument=mention_prefixed_body),
     )
 
 
@@ -245,7 +240,8 @@ def build_help_text(default_top_k: int, max_top_k: int, about_doc_url: str) -> s
 
     lines.extend(
         [
-            "💬 也支持先 `@机器人` 再输入以上命令或仓库名。",
+            "💬 群聊请先真实 `@机器人` 再输入 slash 命令或 repo/url/keyword。",
+            "📩 私聊可直接输入以上 slash 命令。",
             "   `@机器人` 只是占位符，请以群里的实际机器人显示名为准。",
             "",
             "ℹ️ topN 范围：1 - {0}".format(max_top_k),
@@ -282,39 +278,17 @@ def _parse_legacy_top_k(
     return 0, "topN 必须是数字，例如：日榜 top 5"
 
 
-def _strip_leading_mentions(text: str) -> str:
-    remaining = (text or "").strip()
-    stripped_any = False
-    while remaining:
-        tag_match = _LEADING_MENTION_TAG_PATTERN.match(remaining)
-        if tag_match is not None:
-            remaining = remaining[tag_match.end() :].lstrip()
-            stripped_any = True
-            continue
-
-        plain_match = _LEADING_PLAIN_MENTION_PATTERN.match(remaining)
-        if plain_match is not None:
-            remaining = remaining[plain_match.end() :].lstrip()
-            stripped_any = True
-            continue
-        break
-
-    return " ".join(remaining.split()) if stripped_any else ""
-
-
 def _strip_leading_bot_mention(
     text: str,
     mentions: Optional[Sequence[Mapping[str, Any]]],
     bot_open_id: str,
 ) -> str:
     normalized_bot_open_id = (bot_open_id or "").strip()
-    if not normalized_bot_open_id:
-        if mentions is not None:
-            return ""
-        return _strip_leading_mentions(text)
+    if not normalized_bot_open_id or not mentions:
+        return ""
 
     bot_mention = _find_bot_mention(mentions, normalized_bot_open_id)
-    if mentions is not None and bot_mention is None:
+    if bot_mention is None:
         return ""
 
     remaining = (text or "").strip()
@@ -325,7 +299,6 @@ def _strip_leading_bot_mention(
     if tag_match is not None:
         if not _tag_matches_bot_mention(
             tag_match.group(1),
-            tag_match.group(2) or "",
             bot_mention,
             normalized_bot_open_id,
         ):
@@ -335,7 +308,6 @@ def _strip_leading_bot_mention(
     stripped = _strip_leading_plain_bot_mention(
         remaining,
         bot_mention,
-        normalized_bot_open_id,
     )
     return " ".join(stripped.split()) if stripped is not None else ""
 
@@ -355,7 +327,6 @@ def _find_bot_mention(
 
 def _tag_matches_bot_mention(
     tag_text: str,
-    tag_label: str,
     bot_mention: Optional[Mapping[str, Any]],
     bot_open_id: str,
 ) -> bool:
@@ -365,44 +336,26 @@ def _tag_matches_bot_mention(
         if match.group(2).strip()
     }
     candidate_ids = {bot_open_id}
-    candidate_names: set[str] = set()
-    candidate_keys: set[str] = set()
     if bot_mention is not None:
         candidate_ids.update(_mention_ids(bot_mention))
-        name = _field(bot_mention, "name")
-        key = _field(bot_mention, "key")
-        if isinstance(name, str) and name.strip():
-            candidate_names.add(name.strip())
-        if isinstance(key, str) and key.strip():
-            candidate_keys.add(key.strip())
-
-    if tag_ids:
-        return bool(tag_ids & candidate_ids)
-    if tag_label.strip() in candidate_names:
-        return True
-    return any(key in tag_text for key in candidate_keys)
+    if not tag_ids:
+        return False
+    return bool(tag_ids & candidate_ids)
 
 
 def _strip_leading_plain_bot_mention(
     text: str,
     bot_mention: Optional[Mapping[str, Any]],
-    bot_open_id: str,
 ) -> Optional[str]:
-    markers = {"@{0}".format(bot_open_id), "＠{0}".format(bot_open_id)}
-    if bot_mention is not None:
-        key = _field(bot_mention, "key")
-        name = _field(bot_mention, "name")
-        if isinstance(key, str) and key.strip():
-            markers.add(key.strip())
-        if isinstance(name, str) and name.strip():
-            markers.add("@{0}".format(name.strip()))
-            markers.add("＠{0}".format(name.strip()))
-
-    for marker in sorted(markers, key=len, reverse=True):
-        stripped = _strip_plain_marker(text, marker)
-        if stripped is not None:
-            return stripped
-    return None
+    if bot_mention is None:
+        return None
+    marker = _field(bot_mention, "key")
+    if not isinstance(marker, str):
+        return None
+    normalized_marker = marker.strip()
+    if not normalized_marker:
+        return None
+    return _strip_plain_marker(text, normalized_marker)
 
 
 def _strip_plain_marker(text: str, marker: str) -> Optional[str]:
