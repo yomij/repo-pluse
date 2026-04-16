@@ -10,6 +10,8 @@ from repo_pulse.digest.service import DigestRequest
 from repo_pulse.models import ProjectDetailCache, RepositorySnapshot
 from repo_pulse.schemas import RepositoryCandidate
 
+_ABOUT_DOC_URL = "https://example.feishu.cn/docx/about-me"
+
 
 class _FakeDiscoveryService:
     def __init__(self, candidates):
@@ -951,6 +953,7 @@ async def test_runtime_container_handles_event_and_replies_with_detail_summary()
         digest_dispatcher=digest_dispatcher,
         manual_digest_default_top_k=5,
         manual_digest_max_top_k=10,
+        about_doc_url=_ABOUT_DOC_URL,
     )
 
     await handler.handle_event(
@@ -1021,6 +1024,7 @@ async def test_runtime_container_handles_analyze_command_with_github_url():
         detail_orchestrator=orchestrator,
         feishu_client=feishu,
         digest_dispatcher=None,
+        about_doc_url=_ABOUT_DOC_URL,
     )
 
     await handler.handle_event(
@@ -1063,6 +1067,7 @@ async def test_runtime_container_rejects_invalid_direct_full_name_before_researc
         detail_orchestrator=_FakeDetailOrchestrator(),
         feishu_client=feishu,
         digest_dispatcher=None,
+        about_doc_url=_ABOUT_DOC_URL,
     )
 
     await handler.handle_event(
@@ -1100,6 +1105,7 @@ async def test_runtime_container_handles_direct_full_name_resolve_error():
         detail_orchestrator=_FakeDetailOrchestrator(),
         feishu_client=feishu,
         digest_dispatcher=None,
+        about_doc_url=_ABOUT_DOC_URL,
     )
 
     await handler.handle_event(
@@ -1147,6 +1153,7 @@ async def test_runtime_logs_detail_request_and_passes_research_run_id(caplog):
         detail_orchestrator=orchestrator,
         feishu_client=_FakeFeishuClient(),
         digest_dispatcher=None,
+        about_doc_url=_ABOUT_DOC_URL,
     )
 
     await handler.handle_event(
@@ -1202,6 +1209,7 @@ async def test_runtime_logs_action_detail_request_and_passes_research_run_id(cap
         detail_orchestrator=orchestrator,
         feishu_client=_FakeFeishuClient(),
         digest_dispatcher=None,
+        about_doc_url=_ABOUT_DOC_URL,
     )
 
     await handler.handle_action(
@@ -1244,6 +1252,7 @@ async def test_runtime_action_with_trusted_repo_url_bypasses_github_validation()
         detail_orchestrator=orchestrator,
         feishu_client=feishu,
         digest_dispatcher=None,
+        about_doc_url=_ABOUT_DOC_URL,
     )
 
     await handler.handle_action(
@@ -1357,6 +1366,7 @@ async def test_runtime_action_with_trusted_repo_url_survives_evidence_fetch_fail
         detail_orchestrator=orchestrator,
         feishu_client=feishu,
         digest_dispatcher=None,
+        about_doc_url=_ABOUT_DOC_URL,
     )
 
     await handler.handle_action(
@@ -1401,6 +1411,7 @@ async def test_runtime_container_handles_manual_digest_command_with_clamped_top_
         digest_dispatcher=digest_dispatcher,
         manual_digest_default_top_k=5,
         manual_digest_max_top_k=10,
+        about_doc_url=_ABOUT_DOC_URL,
     )
 
     await handler.handle_event(
@@ -1440,6 +1451,7 @@ async def test_runtime_container_handles_help_command_with_help_text():
         digest_dispatcher=None,
         manual_digest_default_top_k=5,
         manual_digest_max_top_k=10,
+        about_doc_url=_ABOUT_DOC_URL,
     )
 
     await handler.handle_event(
@@ -1459,6 +1471,8 @@ async def test_runtime_container_handles_help_command_with_help_text():
     assert feishu.sent_posts and feishu.sent_posts[0][0] == "chat-help"
     assert feishu.sent_posts[0][1] == "🤖 使用帮助"
     assert "/a <repo|url|keyword>" in feishu.sent_posts[0][2]
+    assert "5. 关于我" in feishu.sent_posts[0][2]
+    assert _ABOUT_DOC_URL in feishu.sent_posts[0][2]
     assert feishu.reactions_added == [("om-msg-help", "Typing")]
     assert feishu.reactions_removed == [("om-msg-help", "reaction-1")]
 
@@ -1481,6 +1495,7 @@ async def test_runtime_container_handles_weekly_digest_command_with_processing_r
         digest_dispatcher=digest_dispatcher,
         manual_digest_default_top_k=5,
         manual_digest_max_top_k=10,
+        about_doc_url=_ABOUT_DOC_URL,
     )
 
     await handler.handle_event(
@@ -1521,6 +1536,7 @@ async def test_runtime_container_handles_legacy_mention_daily_command():
         detail_orchestrator=orchestrator,
         feishu_client=feishu,
         digest_dispatcher=digest_dispatcher,
+        about_doc_url=_ABOUT_DOC_URL,
     )
 
     await handler.handle_event(
@@ -1565,6 +1581,7 @@ async def test_runtime_container_can_disable_legacy_mention_commands():
         detail_orchestrator=orchestrator,
         feishu_client=feishu,
         digest_dispatcher=digest_dispatcher,
+        about_doc_url=_ABOUT_DOC_URL,
         allow_legacy_mention_commands=False,
     )
 
@@ -1609,6 +1626,7 @@ async def test_runtime_container_removes_reaction_even_when_detail_generation_fa
         detail_orchestrator=_FailingDetailOrchestrator(),
         feishu_client=feishu,
         digest_dispatcher=None,
+        about_doc_url=_ABOUT_DOC_URL,
     )
 
     await handler.handle_event(
@@ -1653,6 +1671,7 @@ async def test_runtime_container_keeps_typing_reaction_visible_for_minimum_durat
         detail_orchestrator=_FakeDetailOrchestrator(),
         feishu_client=feishu,
         digest_dispatcher=None,
+        about_doc_url=_ABOUT_DOC_URL,
     )
 
     await handler.handle_event(
@@ -1695,6 +1714,7 @@ async def test_runtime_container_prefers_chat_id_over_open_chat_id_for_action_re
         detail_orchestrator=orchestrator,
         feishu_client=feishu,
         digest_dispatcher=None,
+        about_doc_url=_ABOUT_DOC_URL,
     )
 
     await handler.handle_action(
@@ -1805,6 +1825,7 @@ def test_create_runtime_container_uses_real_feishu_docs_client():
             feishu_app_id="app-id",
             feishu_app_secret="app-secret",
             feishu_chat_id="chat-id",
+            feishu_about_doc_url=_ABOUT_DOC_URL,
             database_url="sqlite:///:memory:",
             _env_file=None,
         )
@@ -1812,6 +1833,7 @@ def test_create_runtime_container_uses_real_feishu_docs_client():
 
     assert isinstance(container.detail_handler.detail_orchestrator.docs_client, FeishuDocsClient)
     assert isinstance(container.long_connection_client, FeishuLongConnectionClient)
+    assert container.detail_handler.about_doc_url == _ABOUT_DOC_URL
 
 
 def test_create_runtime_container_can_disable_feishu_long_connection():
@@ -1823,6 +1845,7 @@ def test_create_runtime_container_can_disable_feishu_long_connection():
             feishu_app_id="app-id",
             feishu_app_secret="app-secret",
             feishu_chat_id="chat-id",
+            feishu_about_doc_url=_ABOUT_DOC_URL,
             database_url="sqlite:///:memory:",
             feishu_long_connection_enabled=False,
             _env_file=None,
@@ -1842,6 +1865,7 @@ def test_create_runtime_container_can_disable_legacy_mention_commands():
             feishu_app_id="app-id",
             feishu_app_secret="app-secret",
             feishu_chat_id="chat-id",
+            feishu_about_doc_url=_ABOUT_DOC_URL,
             database_url="sqlite:///:memory:",
             feishu_allow_legacy_mention_commands=False,
             _env_file=None,
@@ -1859,6 +1883,7 @@ def test_create_runtime_container_passes_detail_cache_and_evidence_limits(monkey
         feishu_app_id="app-id",
         feishu_app_secret="app-secret",
         feishu_chat_id="chat-id",
+        feishu_about_doc_url=_ABOUT_DOC_URL,
         database_url="sqlite:///:memory:",
         detail_cache_ttl_seconds=7200,
         research_readme_char_limit=3000,
@@ -1901,6 +1926,7 @@ def test_build_research_provider_uses_dashscope_when_selected(monkeypatch):
             feishu_app_id="app-id",
             feishu_app_secret="app-secret",
             feishu_chat_id="chat-id",
+            feishu_about_doc_url=_ABOUT_DOC_URL,
             research_provider="dashscope",
             dashscope_api_key="dash-key",
             dashscope_base_url="https://dashscope.aliyuncs.com/api/v1",
@@ -1928,6 +1954,7 @@ def test_build_research_provider_returns_disabled_when_dashscope_key_missing():
             feishu_app_id="app-id",
             feishu_app_secret="app-secret",
             feishu_chat_id="chat-id",
+            feishu_about_doc_url=_ABOUT_DOC_URL,
             research_provider="dashscope",
             _env_file=None,
         )
@@ -1962,6 +1989,7 @@ def test_build_summary_localizer_uses_dashscope_when_key_present(monkeypatch):
             feishu_app_id="app-id",
             feishu_app_secret="app-secret",
             feishu_chat_id="chat-id",
+            feishu_about_doc_url=_ABOUT_DOC_URL,
             research_provider="dashscope",
             dashscope_api_key="dash-key",
             dashscope_structurer_model="qwen-plus",
@@ -1986,6 +2014,7 @@ async def test_build_summary_localizer_returns_passthrough_when_dashscope_key_mi
             feishu_app_id="app-id",
             feishu_app_secret="app-secret",
             feishu_chat_id="chat-id",
+            feishu_about_doc_url=_ABOUT_DOC_URL,
             research_provider="dashscope",
             _env_file=None,
         )

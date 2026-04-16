@@ -240,7 +240,11 @@ def test_parse_message_command_can_disable_legacy_mentions():
 def test_build_help_text_lists_all_supported_commands():
     from repo_pulse.details.request_parser import build_help_text
 
-    help_text = build_help_text(default_top_k=5, max_top_k=10)
+    help_text = build_help_text(
+        default_top_k=5,
+        max_top_k=10,
+        about_doc_url="https://example.feishu.cn/docx/about-me",
+    )
 
     assert "/a <repo|url|keyword>" in help_text
     assert "/analyze <repo|url|keyword>" in help_text
@@ -250,6 +254,11 @@ def test_build_help_text_lists_all_supported_commands():
     assert "/weekly [topN]" in help_text
     assert "/h" in help_text
     assert "/help" in help_text
+    assert "5. 关于我" in help_text
+    assert (
+        "[关于我介绍](https://example.feishu.cn/docx/about-me)"
+        in help_text
+    )
     assert "@机器人" in help_text
 
 

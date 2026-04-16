@@ -67,6 +67,7 @@ class DetailRequestHandler:
         github_client,
         detail_orchestrator,
         feishu_client,
+        about_doc_url: str,
         message_builder=None,
         digest_dispatcher=None,
         manual_digest_default_top_k: int = 5,
@@ -80,6 +81,7 @@ class DetailRequestHandler:
         self.digest_dispatcher = digest_dispatcher
         self.manual_digest_default_top_k = manual_digest_default_top_k
         self.manual_digest_max_top_k = manual_digest_max_top_k
+        self.about_doc_url = about_doc_url
         self.allow_legacy_mention_commands = allow_legacy_mention_commands
 
     async def handle_event(self, payload):
@@ -191,6 +193,7 @@ class DetailRequestHandler:
                 build_help_text(
                     default_top_k=self.manual_digest_default_top_k,
                     max_top_k=self.manual_digest_max_top_k,
+                    about_doc_url=self.about_doc_url,
                 ),
                 receive_id=receive_id,
             )
@@ -456,6 +459,7 @@ def create_runtime_container(settings: Optional[Settings] = None) -> RuntimeCont
         digest_dispatcher=DigestDispatcher(digest_jobs),
         manual_digest_default_top_k=effective_settings.manual_digest_default_top_k,
         manual_digest_max_top_k=effective_settings.manual_digest_max_top_k,
+        about_doc_url=effective_settings.feishu_about_doc_url,
         allow_legacy_mention_commands=effective_settings.feishu_allow_legacy_mention_commands,
     )
     container = RuntimeContainer(

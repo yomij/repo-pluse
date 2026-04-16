@@ -1,3 +1,6 @@
+import pytest
+from pydantic import ValidationError
+
 from repo_pulse.config import Settings
 
 
@@ -5,6 +8,10 @@ def test_settings_parse_csv_lists_and_defaults(monkeypatch):
     monkeypatch.setenv("FEISHU_APP_ID", "cli_app_id")
     monkeypatch.setenv("FEISHU_APP_SECRET", "cli_app_secret")
     monkeypatch.setenv("FEISHU_CHAT_ID", "oc_test_chat")
+    monkeypatch.setenv(
+        "FEISHU_ABOUT_DOC_URL",
+        "https://example.feishu.cn/docx/about-me",
+    )
     monkeypatch.setenv("TOPIC_INCLUDE", "ai,llm,agents,devtools")
     monkeypatch.delenv("RESEARCH_PROVIDER", raising=False)
 
@@ -16,6 +23,10 @@ def test_settings_parse_csv_lists_and_defaults(monkeypatch):
     assert settings.pregen_top_n == 5
     assert settings.manual_digest_default_top_k == 5
     assert settings.manual_digest_max_top_k == 10
+    assert (
+        settings.feishu_about_doc_url
+        == "https://example.feishu.cn/docx/about-me"
+    )
     assert settings.feishu_doc_folder_token == ""
     assert settings.feishu_long_connection_enabled is True
     assert settings.feishu_allow_legacy_mention_commands is True
@@ -36,3 +47,13 @@ def test_settings_parse_csv_lists_and_defaults(monkeypatch):
     assert settings.daily_digest_cache_ttl_seconds == 7200
     assert settings.weekly_digest_cache_ttl_seconds == 86400
     assert settings.topic_include == ["ai", "llm", "agents", "devtools"]
+
+
+def test_settings_require_feishu_about_doc_url(monkeypatch):
+    monkeypatch.setenv("FEISHU_APP_ID", "cli_app_id")
+    monkeypatch.setenv("FEISHU_APP_SECRET", "cli_app_secret")
+    monkeypatch.setenv("FEISHU_CHAT_ID", "oc_test_chat")
+    monkeypatch.delenv("FEISHU_ABOUT_DOC_URL", raising=False)
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)

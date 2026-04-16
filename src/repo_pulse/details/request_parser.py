@@ -198,7 +198,7 @@ def parse_repo_reference(text: str) -> Optional[str]:
     return cleaned
 
 
-def build_help_text(default_top_k: int, max_top_k: int) -> str:
+def build_help_text(default_top_k: int, max_top_k: int, about_doc_url: str) -> str:
     return "\n".join(
         [
             "🤖 可用命令",
@@ -218,6 +218,9 @@ def build_help_text(default_top_k: int, max_top_k: int) -> str:
             "4. `/h`",
             "   `/help`",
             "   查看帮助",
+            "",
+            "5. 关于我",
+            "   [关于我介绍]({0})".format(about_doc_url),
             "",
             "💬 也支持先 `@机器人` 再输入以上命令或仓库名。",
             "   `@机器人` 只是占位符，请以群里的实际机器人显示名为准。",

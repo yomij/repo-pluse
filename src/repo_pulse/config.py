@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     feishu_app_id: str
     feishu_app_secret: str
     feishu_chat_id: str
+    feishu_about_doc_url: str
     feishu_doc_folder_token: str = ""
     feishu_long_connection_enabled: bool = True
     feishu_allow_legacy_mention_commands: bool = True
@@ -55,6 +56,14 @@ class Settings(BaseSettings):
         if not value:
             return []
         return [item.strip().lower() for item in value.split(",") if item.strip()]
+
+    @field_validator("feishu_about_doc_url", mode="before")
+    @classmethod
+    def validate_feishu_about_doc_url(cls, value: str) -> str:
+        normalized = (value or "").strip()
+        if not normalized:
+            raise ValueError("FEISHU_ABOUT_DOC_URL is required")
+        return normalized
 
 
 @lru_cache
