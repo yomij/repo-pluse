@@ -55,3 +55,13 @@ def test_settings_allow_missing_feishu_about_doc_url(monkeypatch):
     settings = Settings(_env_file=None)
 
     assert settings.feishu_about_doc_url == ""
+
+
+def test_settings_allow_missing_feishu_chat_id(monkeypatch):
+    monkeypatch.setenv("FEISHU_APP_ID", "cli_app_id")
+    monkeypatch.setenv("FEISHU_APP_SECRET", "cli_app_secret")
+    monkeypatch.delenv("FEISHU_CHAT_ID", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.feishu_chat_id == ""

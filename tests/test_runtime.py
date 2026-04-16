@@ -363,6 +363,50 @@ async def test_digest_pipeline_ranks_candidates_localizes_summary_sends_post_and
 
 
 @pytest.mark.asyncio
+async def test_digest_pipeline_skips_default_push_when_no_receive_id_and_no_default_chat(caplog):
+    from repo_pulse.digest.service import DigestPipeline
+    from repo_pulse.ranking.scoring import RankingService
+    from repo_pulse.ranking.topics import TopicClassifier
+
+    now = datetime(2026, 4, 14, 9, 30, tzinfo=timezone.utc)
+    discovery = _FakeDiscoveryService(
+        candidates=[_candidate("acme/agent", 180, 25, ["ai", "agents"], "Agent framework")]
+    )
+    feishu = _FakeFeishuClient()
+    feishu.chat_id = ""
+    pipeline = DigestPipeline(
+        discovery_service=discovery,
+        snapshot_repository=_FakeSnapshotRepository(
+            baselines={"acme/agent": _baseline("acme/agent", 120, 15)}
+        ),
+        detail_repository=_FakeDetailRepository(),
+        ranking_service=RankingService(classifier=TopicClassifier()),
+        message_builder=_FakeMessageBuilder(),
+        summary_localizer=_FakeSummaryLocalizer(),
+        feishu_client=feishu,
+        detail_orchestrator=_FakeDetailOrchestrator(),
+        top_k=1,
+    )
+
+    with caplog.at_level(logging.INFO):
+        ranked = await pipeline.run_digest(
+            DigestRequest(
+                kind="daily",
+                title="GitHub 热门日榜",
+                window="24h",
+                window_hours=24,
+                top_k=1,
+            ),
+            now,
+        )
+
+    assert ranked == []
+    assert discovery.calls == []
+    assert feishu.sent_posts == []
+    assert "Skipping daily digest push because no receive_id or default Feishu chat_id is configured" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_digest_pipeline_daily_uses_only_24h_baseline_and_real_reason_lines():
     from repo_pulse.digest.service import DigestPipeline
     from repo_pulse.ranking.scoring import RankingService

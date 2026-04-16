@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     github_token: str = ""
     feishu_app_id: str
     feishu_app_secret: str
-    feishu_chat_id: str
+    feishu_chat_id: str = ""
     feishu_about_doc_url: str = ""
     feishu_doc_folder_token: str = ""
     feishu_long_connection_enabled: bool = True

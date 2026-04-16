@@ -1,11 +1,14 @@
 import asyncio
 import json
+import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from typing import Optional, Sequence
 from uuid import uuid4
 
 from repo_pulse.models import DigestResultCache, RepositorySnapshot
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -78,8 +81,16 @@ class DigestPipeline:
         receive_id: Optional[str] = None,
         pre_generate_top_n: int = 0,
     ) -> Sequence[str]:
+        self._last_digest_from_cache = False
+        if self._should_skip_default_push(receive_id):
+            self._last_repo_urls = {}
+            logger.info(
+                "Skipping %s digest push because no receive_id or default Feishu chat_id is configured",
+                digest_request.kind,
+            )
+            return []
+
         async with self._lock_for_kind(digest_request.kind):
-            self._last_digest_from_cache = False
             cached_digest = await self._load_cached_digest(digest_request.kind, now, digest_request.top_k)
             if cached_digest is not None:
                 self._last_digest_from_cache = True
@@ -128,6 +139,14 @@ class DigestPipeline:
             receive_id=receive_id,
         )
         return [entry.full_name for entry in digest.entries]
+
+    def _should_skip_default_push(self, receive_id: Optional[str]) -> bool:
+        explicit_receive_id = (receive_id or "").strip()
+        if explicit_receive_id:
+            return False
+
+        default_chat_id = getattr(self.feishu_client, "chat_id", "")
+        return not (default_chat_id or "").strip()
 
     async def pre_generate_details(self, ranked_repos: Sequence[str]) -> None:
         if self.detail_orchestrator is None or self._last_digest_from_cache:
