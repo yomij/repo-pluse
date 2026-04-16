@@ -403,7 +403,7 @@ async def test_digest_pipeline_skips_default_push_when_no_receive_id_and_no_defa
     assert ranked == []
     assert discovery.calls == []
     assert feishu.sent_posts == []
-    assert "Skipping daily digest push because no receive_id or default Feishu chat_id is configured" in caplog.text
+    assert "Skipping daily digest push because no receive_id or default Feishu targets are configured" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -1910,7 +1910,7 @@ def test_create_runtime_container_uses_real_feishu_docs_client():
         Settings(
             feishu_app_id="app-id",
             feishu_app_secret="app-secret",
-            feishu_chat_id="chat-id",
+            feishu_chat_ids=["chat-id"],
             feishu_about_doc_url=_ABOUT_DOC_URL,
             database_url="sqlite:///:memory:",
             _env_file=None,
@@ -1922,6 +1922,27 @@ def test_create_runtime_container_uses_real_feishu_docs_client():
     assert container.detail_handler.about_doc_url == _ABOUT_DOC_URL
 
 
+def test_create_runtime_container_ignores_legacy_feishu_chat_id_env(monkeypatch):
+    from repo_pulse.config import Settings
+    from repo_pulse.runtime import create_runtime_container
+
+    monkeypatch.setenv("FEISHU_CHAT_ID", "oc_legacy")
+    monkeypatch.delenv("FEISHU_CHAT_IDS", raising=False)
+
+    container = create_runtime_container(
+        Settings(
+            feishu_app_id="app-id",
+            feishu_app_secret="app-secret",
+            feishu_about_doc_url=_ABOUT_DOC_URL,
+            database_url="sqlite:///:memory:",
+            _env_file=None,
+        )
+    )
+
+    assert container.digest_jobs["daily"].pipeline.default_receive_ids == []
+    assert container.digest_jobs["weekly"].pipeline.default_receive_ids == []
+
+
 def test_create_runtime_container_can_disable_feishu_long_connection():
     from repo_pulse.config import Settings
     from repo_pulse.runtime import create_runtime_container
@@ -1930,7 +1951,7 @@ def test_create_runtime_container_can_disable_feishu_long_connection():
         Settings(
             feishu_app_id="app-id",
             feishu_app_secret="app-secret",
-            feishu_chat_id="chat-id",
+            feishu_chat_ids=["chat-id"],
             feishu_about_doc_url=_ABOUT_DOC_URL,
             database_url="sqlite:///:memory:",
             feishu_long_connection_enabled=False,
@@ -1950,7 +1971,7 @@ def test_create_runtime_container_can_disable_legacy_mention_commands():
         Settings(
             feishu_app_id="app-id",
             feishu_app_secret="app-secret",
-            feishu_chat_id="chat-id",
+            feishu_chat_ids=["chat-id"],
             feishu_about_doc_url=_ABOUT_DOC_URL,
             database_url="sqlite:///:memory:",
             feishu_allow_legacy_mention_commands=False,
@@ -1968,7 +1989,7 @@ def test_create_runtime_container_passes_detail_cache_and_evidence_limits(monkey
     settings = Settings(
         feishu_app_id="app-id",
         feishu_app_secret="app-secret",
-        feishu_chat_id="chat-id",
+        feishu_chat_ids=["chat-id"],
         feishu_about_doc_url=_ABOUT_DOC_URL,
         database_url="sqlite:///:memory:",
         detail_cache_ttl_seconds=7200,
@@ -2011,7 +2032,7 @@ def test_build_research_provider_uses_dashscope_when_selected(monkeypatch):
         Settings(
             feishu_app_id="app-id",
             feishu_app_secret="app-secret",
-            feishu_chat_id="chat-id",
+            feishu_chat_ids=["chat-id"],
             feishu_about_doc_url=_ABOUT_DOC_URL,
             research_provider="dashscope",
             dashscope_api_key="dash-key",
@@ -2039,7 +2060,7 @@ def test_build_research_provider_returns_disabled_when_dashscope_key_missing():
         Settings(
             feishu_app_id="app-id",
             feishu_app_secret="app-secret",
-            feishu_chat_id="chat-id",
+            feishu_chat_ids=["chat-id"],
             feishu_about_doc_url=_ABOUT_DOC_URL,
             research_provider="dashscope",
             _env_file=None,
@@ -2074,7 +2095,7 @@ def test_build_summary_localizer_uses_dashscope_when_key_present(monkeypatch):
         Settings(
             feishu_app_id="app-id",
             feishu_app_secret="app-secret",
-            feishu_chat_id="chat-id",
+            feishu_chat_ids=["chat-id"],
             feishu_about_doc_url=_ABOUT_DOC_URL,
             research_provider="dashscope",
             dashscope_api_key="dash-key",
@@ -2099,7 +2120,7 @@ async def test_build_summary_localizer_returns_passthrough_when_dashscope_key_mi
         Settings(
             feishu_app_id="app-id",
             feishu_app_secret="app-secret",
-            feishu_chat_id="chat-id",
+            feishu_chat_ids=["chat-id"],
             feishu_about_doc_url=_ABOUT_DOC_URL,
             research_provider="dashscope",
             _env_file=None,

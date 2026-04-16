@@ -4,7 +4,6 @@ from repo_pulse.config import Settings
 def test_settings_parse_csv_lists_and_defaults(monkeypatch):
     monkeypatch.setenv("FEISHU_APP_ID", "cli_app_id")
     monkeypatch.setenv("FEISHU_APP_SECRET", "cli_app_secret")
-    monkeypatch.setenv("FEISHU_CHAT_ID", "oc_test_chat")
     monkeypatch.setenv("FEISHU_CHAT_IDS", "oc_group_a,oc_group_b")
     monkeypatch.setenv(
         "FEISHU_ABOUT_DOC_URL",
@@ -51,7 +50,6 @@ def test_settings_parse_csv_lists_and_defaults(monkeypatch):
 def test_settings_allow_missing_feishu_about_doc_url(monkeypatch):
     monkeypatch.setenv("FEISHU_APP_ID", "cli_app_id")
     monkeypatch.setenv("FEISHU_APP_SECRET", "cli_app_secret")
-    monkeypatch.setenv("FEISHU_CHAT_ID", "oc_test_chat")
     monkeypatch.delenv("FEISHU_ABOUT_DOC_URL", raising=False)
 
     settings = Settings(_env_file=None)
@@ -59,13 +57,12 @@ def test_settings_allow_missing_feishu_about_doc_url(monkeypatch):
     assert settings.feishu_about_doc_url == ""
 
 
-def test_settings_allow_missing_feishu_chat_id(monkeypatch):
+def test_settings_allow_missing_feishu_chat_ids(monkeypatch):
     monkeypatch.setenv("FEISHU_APP_ID", "cli_app_id")
     monkeypatch.setenv("FEISHU_APP_SECRET", "cli_app_secret")
-    monkeypatch.delenv("FEISHU_CHAT_ID", raising=False)
     monkeypatch.delenv("FEISHU_CHAT_IDS", raising=False)
 
     settings = Settings(_env_file=None)
 
-    assert settings.feishu_chat_id == ""
     assert settings.feishu_chat_ids == []
+    assert "feishu_chat_id" not in settings.model_dump()

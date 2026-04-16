@@ -52,17 +52,12 @@ def run_select_chat_id_command(
         return 1
 
     try:
-        chat_ids_value, default_chat_id = append_chat_id_to_env(
-            path,
-            filtered_chats[selection_index].chat_id,
-        )
+        chat_ids_value = append_chat_id_to_env(path, filtered_chats[selection_index].chat_id)
     except Exception as exc:
         print("Failed to update {0}: {1}".format(path, exc))
         return 1
 
     print("Updated FEISHU_CHAT_IDS={0}".format(chat_ids_value))
-    if default_chat_id:
-        print("Default FEISHU_CHAT_ID set to {0}".format(default_chat_id))
     return 0
 
 
@@ -75,7 +70,7 @@ def read_feishu_credentials(env_path: Path) -> tuple[str, str]:
     return app_id, app_secret
 
 
-def append_chat_id_to_env(env_path: Path, chat_id: str) -> tuple[str, str]:
+def append_chat_id_to_env(env_path: Path, chat_id: str) -> str:
     normalized_chat_id = (chat_id or "").strip()
     if not normalized_chat_id:
         raise RuntimeError("chat_id must not be empty")
@@ -85,14 +80,10 @@ def append_chat_id_to_env(env_path: Path, chat_id: str) -> tuple[str, str]:
     if normalized_chat_id not in configured_chat_ids:
         configured_chat_ids.append(normalized_chat_id)
     lines = _upsert_env_value(lines, "FEISHU_CHAT_IDS", ",".join(configured_chat_ids))
-
-    current_default_chat_id = _get_env_value(lines, "FEISHU_CHAT_ID")
-    default_chat_id = current_default_chat_id or normalized_chat_id
-    if not current_default_chat_id:
-        lines = _upsert_env_value(lines, "FEISHU_CHAT_ID", default_chat_id)
+    lines = _delete_env_key(lines, "FEISHU_CHAT_ID")
 
     env_path.write_text("\n".join(lines) + "\n")
-    return ",".join(configured_chat_ids), default_chat_id if not current_default_chat_id else ""
+    return ",".join(configured_chat_ids)
 
 
 def _filter_chats(chats: Sequence[FeishuChat], *, name_filter: str) -> list[FeishuChat]:
@@ -132,3 +123,14 @@ def _upsert_env_value(lines: Sequence[str], key: str, value: str) -> list[str]:
 
     updated_lines.append("{0}={1}".format(key, value))
     return updated_lines
+
+
+def _delete_env_key(lines: Sequence[str], key: str) -> list[str]:
+    return [
+        line
+        for line in lines
+        if not (
+            (match := _ENV_LINE_PATTERN.match(line))
+            and match.group(1) == key
+        )
+    ]

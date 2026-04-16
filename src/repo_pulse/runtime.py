@@ -363,6 +363,7 @@ class RuntimeContainer:
 def create_runtime_container(settings: Optional[Settings] = None) -> RuntimeContainer:
     effective_settings = settings or get_settings()
     default_feishu_chat_ids = _resolve_default_feishu_chat_ids(effective_settings)
+    primary_feishu_receive_id = default_feishu_chat_ids[0] if default_feishu_chat_ids else ""
     engine = build_engine(effective_settings.database_url)
     snapshot_repository = SnapshotRepository(engine)
     detail_repository = ProjectDetailRepository(engine)
@@ -371,7 +372,7 @@ def create_runtime_container(settings: Optional[Settings] = None) -> RuntimeCont
     feishu_client = FeishuClient(
         app_id=effective_settings.feishu_app_id,
         app_secret=effective_settings.feishu_app_secret,
-        chat_id=effective_settings.feishu_chat_id,
+        chat_id=primary_feishu_receive_id,
     )
     docs_client = FeishuDocsClient(
         app_id=effective_settings.feishu_app_id,
@@ -485,18 +486,11 @@ def create_runtime_container(settings: Optional[Settings] = None) -> RuntimeCont
 
 
 def _resolve_default_feishu_chat_ids(settings: Settings) -> list[str]:
-    configured_chat_ids = [
+    return [
         str(chat_id).strip()
         for chat_id in settings.feishu_chat_ids
         if str(chat_id).strip()
     ]
-    if configured_chat_ids:
-        return configured_chat_ids
-
-    default_chat_id = (settings.feishu_chat_id or "").strip()
-    if default_chat_id:
-        return [default_chat_id]
-    return []
 
 
 def _build_research_provider(settings: Settings) -> tuple[ResearchProvider, list]:

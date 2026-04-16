@@ -116,7 +116,6 @@ def test_run_select_chat_id_command_writes_selected_chat_id(tmp_path, monkeypatc
                 "FEISHU_APP_ID=app-id",
                 "FEISHU_APP_SECRET=app-secret",
                 "FEISHU_CHAT_IDS=",
-                "FEISHU_CHAT_ID=",
                 "DIGEST_TOP_K=10",
                 "",
             ]
@@ -146,8 +145,48 @@ def test_run_select_chat_id_command_writes_selected_chat_id(tmp_path, monkeypatc
     assert "Repo Pulse Beta" in captured.out
     env_content = env_path.read_text()
     assert "FEISHU_CHAT_IDS=oc_chat_2" in env_content
-    assert "FEISHU_CHAT_ID=oc_chat_2" in env_content
+    assert "FEISHU_CHAT_ID=" not in env_content
+    assert "Default FEISHU_CHAT_ID set to" not in captured.out
     assert "DIGEST_TOP_K=10" in env_content
+
+
+def test_run_select_chat_id_command_removes_legacy_chat_id_on_update(
+    tmp_path, monkeypatch, capsys
+):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "FEISHU_APP_ID=app-id",
+                "FEISHU_APP_SECRET=app-secret",
+                "FEISHU_CHAT_IDS=oc_existing",
+                "FEISHU_CHAT_ID=oc_legacy",
+                "",
+            ]
+        )
+    )
+
+    async def _fake_fetch_chats(path):
+        assert path == env_path
+        return [FeishuChat(chat_id="oc_chat_2", name="Repo Pulse Beta")]
+
+    monkeypatch.setattr(
+        "repo_pulse.feishu.chat_selector.fetch_chats_for_selection",
+        _fake_fetch_chats,
+    )
+
+    exit_code = run_select_chat_id_command(
+        name_filter="repo",
+        env_path=env_path,
+        input_func=lambda _: "1",
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    env_content = env_path.read_text()
+    assert "FEISHU_CHAT_IDS=oc_existing,oc_chat_2" in env_content
+    assert "FEISHU_CHAT_ID=" not in env_content
+    assert "Default FEISHU_CHAT_ID set to" not in captured.out
 
 
 def test_run_select_chat_id_command_returns_one_when_no_chat_matches(tmp_path, monkeypatch, capsys):
@@ -158,7 +197,6 @@ def test_run_select_chat_id_command_returns_one_when_no_chat_matches(tmp_path, m
                 "FEISHU_APP_ID=app-id",
                 "FEISHU_APP_SECRET=app-secret",
                 "FEISHU_CHAT_IDS=oc_existing",
-                "FEISHU_CHAT_ID=oc_old",
                 "",
             ]
         )
@@ -184,4 +222,4 @@ def test_run_select_chat_id_command_returns_one_when_no_chat_matches(tmp_path, m
     assert "No Feishu chats matched" in captured.out
     env_content = env_path.read_text()
     assert "FEISHU_CHAT_IDS=oc_existing" in env_content
-    assert "FEISHU_CHAT_ID=oc_old" in env_content
+    assert "FEISHU_CHAT_ID=" not in env_content

@@ -92,7 +92,7 @@ class DigestPipeline:
         if not target_receive_ids:
             self._last_repo_urls = {}
             logger.info(
-                "Skipping %s digest push because no receive_id or default Feishu chat_id is configured",
+                "Skipping %s digest push because no receive_id or default Feishu targets are configured",
                 digest_request.kind,
             )
             return []
