@@ -56,6 +56,7 @@ class DigestPipeline:
         digest_cache_repository=None,
         max_cached_entries: Optional[int] = None,
         cache_ttl_by_kind: Optional[dict[str, int]] = None,
+        default_receive_ids: Optional[Sequence[str]] = None,
     ):
         self.discovery_service = discovery_service
         self.snapshot_repository = snapshot_repository
@@ -69,6 +70,11 @@ class DigestPipeline:
         self.top_k = max(top_k, 0)
         self.max_cached_entries = max(max_cached_entries if max_cached_entries is not None else top_k, 0)
         self.cache_ttl_by_kind = dict(cache_ttl_by_kind or {})
+        self.default_receive_ids = [
+            str(item).strip()
+            for item in (default_receive_ids or [])
+            if str(item).strip()
+        ]
         self.topic_exclude = {item.lower() for item in (topic_exclude or [])}
         self._last_repo_urls: dict[str, str] = {}
         self._last_digest_from_cache = False
@@ -82,7 +88,8 @@ class DigestPipeline:
         pre_generate_top_n: int = 0,
     ) -> Sequence[str]:
         self._last_digest_from_cache = False
-        if self._should_skip_default_push(receive_id):
+        target_receive_ids = self._target_receive_ids(receive_id)
+        if not target_receive_ids:
             self._last_repo_urls = {}
             logger.info(
                 "Skipping %s digest push because no receive_id or default Feishu chat_id is configured",
@@ -99,11 +106,7 @@ class DigestPipeline:
                     for entry in cached_digest.entries
                 }
                 post = self.message_builder.build_digest_post(cached_digest)
-                await self.feishu_client.send_post(
-                    post.title,
-                    post.markdown,
-                    receive_id=receive_id,
-                )
+                await self._send_post_to_targets(post.title, post.markdown, target_receive_ids)
                 return [entry.full_name for entry in cached_digest.entries]
 
             try:
@@ -125,28 +128,38 @@ class DigestPipeline:
                     for entry in stale_digest.entries
                 }
                 post = self.message_builder.build_digest_post(stale_digest)
-                await self.feishu_client.send_post(
-                    post.title,
-                    post.markdown,
-                    receive_id=receive_id,
-                )
+                await self._send_post_to_targets(post.title, post.markdown, target_receive_ids)
                 return [entry.full_name for entry in stale_digest.entries]
 
         post = self.message_builder.build_digest_post(digest)
-        await self.feishu_client.send_post(
-            post.title,
-            post.markdown,
-            receive_id=receive_id,
-        )
+        await self._send_post_to_targets(post.title, post.markdown, target_receive_ids)
         return [entry.full_name for entry in digest.entries]
 
-    def _should_skip_default_push(self, receive_id: Optional[str]) -> bool:
+    def _target_receive_ids(self, receive_id: Optional[str]) -> list[Optional[str]]:
         explicit_receive_id = (receive_id or "").strip()
         if explicit_receive_id:
-            return False
+            return [explicit_receive_id]
+
+        if self.default_receive_ids:
+            return list(self.default_receive_ids)
 
         default_chat_id = getattr(self.feishu_client, "chat_id", "")
-        return not (default_chat_id or "").strip()
+        if (default_chat_id or "").strip():
+            return [None]
+        return []
+
+    async def _send_post_to_targets(
+        self,
+        title: str,
+        markdown: str,
+        target_receive_ids: Sequence[Optional[str]],
+    ) -> None:
+        for target_receive_id in target_receive_ids:
+            await self.feishu_client.send_post(
+                title,
+                markdown,
+                receive_id=target_receive_id,
+            )
 
     async def pre_generate_details(self, ranked_repos: Sequence[str]) -> None:
         if self.detail_orchestrator is None or self._last_digest_from_cache:

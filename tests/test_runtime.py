@@ -407,6 +407,48 @@ async def test_digest_pipeline_skips_default_push_when_no_receive_id_and_no_defa
 
 
 @pytest.mark.asyncio
+async def test_digest_pipeline_broadcasts_to_all_default_chat_ids():
+    from repo_pulse.digest.service import DigestPipeline
+    from repo_pulse.ranking.scoring import RankingService
+    from repo_pulse.ranking.topics import TopicClassifier
+
+    now = datetime(2026, 4, 14, 9, 30, tzinfo=timezone.utc)
+    pipeline = DigestPipeline(
+        discovery_service=_FakeDiscoveryService(
+            candidates=[_candidate("acme/agent", 180, 25, ["ai", "agents"], "Agent framework")]
+        ),
+        snapshot_repository=_FakeSnapshotRepository(
+            baselines={"acme/agent": _baseline("acme/agent", 120, 15)}
+        ),
+        detail_repository=_FakeDetailRepository(),
+        ranking_service=RankingService(classifier=TopicClassifier()),
+        message_builder=_FakeMessageBuilder(),
+        summary_localizer=_FakeSummaryLocalizer(),
+        feishu_client=_FakeFeishuClient(),
+        detail_orchestrator=_FakeDetailOrchestrator(),
+        top_k=1,
+        default_receive_ids=["oc_chat_a", "oc_chat_b"],
+    )
+
+    ranked = await pipeline.run_digest(
+        DigestRequest(
+            kind="daily",
+            title="GitHub 热门日榜",
+            window="24h",
+            window_hours=24,
+            top_k=1,
+        ),
+        now,
+    )
+
+    assert ranked == ["acme/agent"]
+    assert pipeline.feishu_client.sent_posts == [
+        ("oc_chat_a", "🚀 GitHub 热门日榜｜24h", "1. **acme/agent**"),
+        ("oc_chat_b", "🚀 GitHub 热门日榜｜24h", "1. **acme/agent**"),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_digest_pipeline_daily_uses_only_24h_baseline_and_real_reason_lines():
     from repo_pulse.digest.service import DigestPipeline
     from repo_pulse.ranking.scoring import RankingService

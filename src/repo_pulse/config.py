@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     feishu_app_id: str
     feishu_app_secret: str
     feishu_chat_id: str = ""
+    feishu_chat_ids: Annotated[List[str], NoDecode] = Field(default_factory=list)
     feishu_about_doc_url: str = ""
     feishu_doc_folder_token: str = ""
     feishu_long_connection_enabled: bool = True
@@ -56,6 +57,15 @@ class Settings(BaseSettings):
         if not value:
             return []
         return [item.strip().lower() for item in value.split(",") if item.strip()]
+
+    @field_validator("feishu_chat_ids", mode="before")
+    @classmethod
+    def parse_feishu_chat_ids(cls, value: Union[str, List[str]]) -> List[str]:
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        if not value:
+            return []
+        return [item.strip() for item in str(value).split(",") if item.strip()]
 
     @field_validator("feishu_about_doc_url", mode="before")
     @classmethod

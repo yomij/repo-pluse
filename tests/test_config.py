@@ -5,6 +5,7 @@ def test_settings_parse_csv_lists_and_defaults(monkeypatch):
     monkeypatch.setenv("FEISHU_APP_ID", "cli_app_id")
     monkeypatch.setenv("FEISHU_APP_SECRET", "cli_app_secret")
     monkeypatch.setenv("FEISHU_CHAT_ID", "oc_test_chat")
+    monkeypatch.setenv("FEISHU_CHAT_IDS", "oc_group_a,oc_group_b")
     monkeypatch.setenv(
         "FEISHU_ABOUT_DOC_URL",
         "https://example.feishu.cn/docx/about-me",
@@ -24,6 +25,7 @@ def test_settings_parse_csv_lists_and_defaults(monkeypatch):
         settings.feishu_about_doc_url
         == "https://example.feishu.cn/docx/about-me"
     )
+    assert settings.feishu_chat_ids == ["oc_group_a", "oc_group_b"]
     assert settings.feishu_doc_folder_token == ""
     assert settings.feishu_long_connection_enabled is True
     assert settings.feishu_allow_legacy_mention_commands is True
@@ -61,7 +63,9 @@ def test_settings_allow_missing_feishu_chat_id(monkeypatch):
     monkeypatch.setenv("FEISHU_APP_ID", "cli_app_id")
     monkeypatch.setenv("FEISHU_APP_SECRET", "cli_app_secret")
     monkeypatch.delenv("FEISHU_CHAT_ID", raising=False)
+    monkeypatch.delenv("FEISHU_CHAT_IDS", raising=False)
 
     settings = Settings(_env_file=None)
 
     assert settings.feishu_chat_id == ""
+    assert settings.feishu_chat_ids == []

@@ -71,6 +71,33 @@ uv run pytest -q
 uv run python -m repo_pulse.cli run-digest --dry-run
 ```
 
+## Feishu Chat Setup
+
+如果你还没有拿到飞书群 `chat_id`，可以直接用项目内置 CLI 交互选择并回写 [`.env`](/Users/yomi/Documents/project/repo-pluse/.env)：
+
+```bash
+uv run python -m repo_pulse.cli select-chat-id
+```
+
+群比较多时，可以先按名称过滤：
+
+```bash
+uv run python -m repo_pulse.cli select-chat-id --name repo
+```
+
+使用说明：
+
+- 该命令会读取当前 `.env` 里的 `FEISHU_APP_ID` 和 `FEISHU_APP_SECRET`
+- 它会列出机器人当前所在的飞书群，终端输入编号后把选中的 `chat_id` 追加到 `FEISHU_CHAT_IDS`
+- 如果 `FEISHU_CHAT_ID` 还没配置，会顺手把第一次选中的群写成默认单群回退值
+- 想加入多个定时广播群时，重复执行该命令即可，每次追加一个群
+
+前置条件：
+
+- 飞书应用已开启机器人能力并发布
+- 机器人已经加入目标群
+- 应用至少具备读取群列表的权限，例如 `im:chat:readonly`
+
 ## Docker Run
 
 当前 Docker 镜像会直接启动完整 FastAPI 运行时：
@@ -81,6 +108,7 @@ uv run python -m repo_pulse.cli run-digest --dry-run
 - 日报会通过飞书 `post + md` 发送更稳定的富文本摘要（含 emoji / 列表 / 链接）
 - 日报里“一句话”会优先翻成中文后再推送
 - 飞书群消息默认通过官方 SDK 长连接进入真实详情处理逻辑，并回传详情摘要与最佳实践
+- 定时日报 / 周榜会优先按 `FEISHU_CHAT_IDS` 逐群广播；未配置时回退到单个 `FEISHU_CHAT_ID`
 
 当前限制：
 
@@ -119,6 +147,8 @@ DASHSCOPE_RESEARCH_RETRY_BACKOFF_SECONDS=1
 
 以下环境变量可用于控制详情缓存与仓库证据采样上限（括号内为默认值）：
 
+- `FEISHU_CHAT_ID`（可选）：默认单群回退目标；未配置 `FEISHU_CHAT_IDS` 时，定时广播会发到这里
+- `FEISHU_CHAT_IDS`（可选）：默认定时广播群列表，使用逗号分隔；配置后日报/周榜会按该列表逐群推送
 - `FEISHU_ABOUT_DOC_URL`（可选）：`/h` 帮助中“关于我介绍”的目标文档链接；留空时不展示该入口
 - `DETAIL_CACHE_TTL_SECONDS`（`86400`）：项目详情缓存 TTL（秒）
 - `DASHSCOPE_RESEARCH_MAX_RETRIES`（`2`）：研究报告阶段的最大重试次数

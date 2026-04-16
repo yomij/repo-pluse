@@ -1,12 +1,21 @@
 import asyncio
 import json
 import time
+from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 import httpx
 import lark_oapi as lark
 import lark_oapi.api.auth.v3 as auth_v3
 import lark_oapi.api.im.v1 as im_v1
+
+
+@dataclass(frozen=True)
+class FeishuChat:
+    chat_id: str
+    name: str
+    description: str = ""
+    external: bool = False
 
 
 class FeishuClient:
@@ -153,6 +162,60 @@ class FeishuClient:
 
     async def reply_text(self, receive_id: str, text: str) -> Dict[str, Any]:
         return await self.send_text(text, receive_id=receive_id)
+
+    async def list_chats(self, page_size: int = 100) -> list[FeishuChat]:
+        headers = await self._authorized_headers()
+        chats: list[FeishuChat] = []
+        page_token: Optional[str] = None
+
+        while True:
+            params = {"page_size": min(max(page_size, 1), 100)}
+            if page_token:
+                params["page_token"] = page_token
+
+            response = await self._http_client.get(
+                f"{self._base_url}/im/v1/chats",
+                headers=headers,
+                params=params,
+            )
+            payload = self._decode_feishu_payload(response, "list chats")
+            self._raise_on_feishu_business_error(payload, "list chats")
+
+            data = payload.get("data") or {}
+            for item in data.get("items") or []:
+                chat_id = str(item.get("chat_id") or "").strip()
+                if not chat_id:
+                    continue
+                chats.append(
+                    FeishuChat(
+                        chat_id=chat_id,
+                        name=str(item.get("name") or "").strip() or chat_id,
+                        description=str(item.get("description") or "").strip(),
+                        external=bool(item.get("external", False)),
+                    )
+                )
+
+            if not data.get("has_more"):
+                return chats
+
+            page_token = str(data.get("page_token") or "").strip()
+            if not page_token:
+                return chats
+
+    def _decode_feishu_payload(self, response: httpx.Response, operation: str) -> Dict[str, Any]:
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            response.raise_for_status()
+            raise RuntimeError(
+                "Feishu API returned invalid JSON while trying to {0}".format(operation)
+            ) from exc
+
+        if response.is_error:
+            self._raise_on_feishu_business_error(payload, operation)
+            response.raise_for_status()
+
+        return payload
 
     def _raise_on_feishu_business_error(self, payload: Dict[str, Any], operation: str) -> None:
         if payload.get('code') == 0:
