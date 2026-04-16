@@ -26,7 +26,7 @@ brew install uv
 ## Local Run
 
 ```bash
-uv run uvicorn repo_pulse.main:create_app --factory --host 0.0.0.0 --port 8000
+uv run uvicorn repo_pulse.main:create_app --factory --host 0.0.0.0 --port 9527
 ```
 
 启动时会装配真实运行时容器，完成：
@@ -134,14 +134,14 @@ DASHSCOPE_RESEARCH_RETRY_BACKOFF_SECONDS=1
 ```bash
 docker compose up -d --build
 docker compose ps
-curl http://127.0.0.1:8000/healthz
+curl http://127.0.0.1:9527/healthz
 ```
 
 或直接构建并运行镜像：
 
 ```bash
 docker build -t repo-pulse .
-docker run --rm --env-file .env -p 8000:8000 -v "$(pwd)/data:/app/data" repo-pulse
+docker run --rm --env-file .env -p 9527:9527 -v "$(pwd)/data:/app/data" repo-pulse
 ```
 
 补充说明：

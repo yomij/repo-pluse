@@ -7,6 +7,6 @@ services:
     environment:
       PYTHONUNBUFFERED: "1"
     ports:
-      - "8000:8000"
+      - "9527:9527"
     volumes:
       - ./data:/app/data
