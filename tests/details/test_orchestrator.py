@@ -192,22 +192,46 @@ def test_parse_message_command_supports_legacy_mentions_and_slash_passthrough():
     from repo_pulse.details.request_parser import parse_message_command
 
     legacy_daily = parse_message_command(
-        "@张三 @任意机器人名 日榜 top 20",
+        '<at user_id="ou_bot">Repo Pulse</at> 日榜 top 20',
         default_top_k=5,
         max_top_k=10,
         allow_legacy_mention_commands=True,
+        mentions=[
+            {
+                "key": "@_user_1",
+                "id": {"open_id": "ou_bot"},
+                "name": "Repo Pulse",
+            }
+        ],
+        bot_open_id="ou_bot",
     )
     legacy_analyze = parse_message_command(
-        '<at user_id="ou_user">张三</at> <at user_id="ou_bot">随便起的机器人名</at> openai/openai-python',
+        '<at user_id="ou_bot">Repo Pulse</at> openai/openai-python',
         default_top_k=5,
         max_top_k=10,
         allow_legacy_mention_commands=True,
+        mentions=[
+            {
+                "key": "@_user_1",
+                "id": {"open_id": "ou_bot"},
+                "name": "Repo Pulse",
+            }
+        ],
+        bot_open_id="ou_bot",
     )
     slash_with_mention = parse_message_command(
-        '<at user_id="ou_bot">随便起的机器人名</at> /help',
+        '<at user_id="ou_bot">Repo Pulse</at> /help',
         default_top_k=5,
         max_top_k=10,
         allow_legacy_mention_commands=True,
+        mentions=[
+            {
+                "key": "@_user_1",
+                "id": {"open_id": "ou_bot"},
+                "name": "Repo Pulse",
+            }
+        ],
+        bot_open_id="ou_bot",
     )
 
     assert legacy_daily.is_command is True
@@ -223,14 +247,44 @@ def test_parse_message_command_supports_legacy_mentions_and_slash_passthrough():
     assert slash_with_mention.command.kind == "help"
 
 
+def test_parse_message_command_ignores_group_member_mentions():
+    from repo_pulse.details.request_parser import parse_message_command
+
+    result = parse_message_command(
+        '<at user_id="ou_user">张三</at> 日榜',
+        default_top_k=5,
+        max_top_k=10,
+        allow_legacy_mention_commands=True,
+        mentions=[
+            {
+                "key": "@_user_1",
+                "id": {"open_id": "ou_user"},
+                "name": "张三",
+            }
+        ],
+        bot_open_id="ou_bot",
+    )
+
+    assert result.is_command is False
+    assert result.command is None
+
+
 def test_parse_message_command_can_disable_legacy_mentions():
     from repo_pulse.details.request_parser import parse_message_command
 
     result = parse_message_command(
-        "@任意机器人名 日榜",
+        '<at user_id="ou_bot">Repo Pulse</at> 日榜',
         default_top_k=5,
         max_top_k=10,
         allow_legacy_mention_commands=False,
+        mentions=[
+            {
+                "key": "@_user_1",
+                "id": {"open_id": "ou_bot"},
+                "name": "Repo Pulse",
+            }
+        ],
+        bot_open_id="ou_bot",
     )
 
     assert result.is_command is False

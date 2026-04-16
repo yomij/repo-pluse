@@ -321,6 +321,52 @@ async def test_feishu_client_reply_text_raises_on_feishu_business_error():
 
 
 @pytest.mark.asyncio
+async def test_feishu_client_get_bot_info_fetches_and_caches_open_id():
+    requests = []
+
+    async def _handler(request):
+        requests.append(request)
+        if request.url.path == '/open-apis/auth/v3/tenant_access_token/internal/':
+            return httpx.Response(
+                200,
+                json={'code': 0, 'tenant_access_token': 'token-bot', 'expire': 7200},
+            )
+        if request.url.path == '/open-apis/bot/v3/info':
+            assert request.headers['authorization'] == 'Bearer token-bot'
+            return httpx.Response(
+                200,
+                json={
+                    'code': 0,
+                    'bot': {
+                        'open_id': 'ou_bot',
+                        'app_name': 'Repo Pulse',
+                    },
+                },
+            )
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(_handler)
+    ) as http_client:
+        client = FeishuClient(
+            app_id='app-id',
+            app_secret='app-secret',
+            chat_id='chat-id',
+            http_client=http_client,
+        )
+        first = await client.get_bot_info()
+        second = await client.get_bot_info()
+
+    assert first.open_id == 'ou_bot'
+    assert first.app_name == 'Repo Pulse'
+    assert second is first
+    assert [request.url.path for request in requests] == [
+        '/open-apis/auth/v3/tenant_access_token/internal/',
+        '/open-apis/bot/v3/info',
+    ]
+
+
+@pytest.mark.asyncio
 async def test_feishu_client_concurrent_tenant_access_token_refreshes_once():
     token_calls = 0
 

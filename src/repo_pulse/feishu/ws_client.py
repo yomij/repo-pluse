@@ -124,13 +124,18 @@ class FeishuLongConnectionClient:
         if not text:
             return None
 
+        payload_message = {
+            "message_id": getattr(message, "message_id", None),
+            "text": text,
+        }
+        mentions = _plainify_mentions(getattr(message, "mentions", None))
+        if mentions:
+            payload_message["mentions"] = mentions
+
         return {
             "event": {
                 "chat_id": getattr(message, "chat_id", None),
-                "message": {
-                    "message_id": getattr(message, "message_id", None),
-                    "text": text,
-                },
+                "message": payload_message,
             }
         }
 
@@ -153,3 +158,22 @@ def _extract_text(content: Optional[str]) -> str:
 
     text = payload.get("text") if isinstance(payload, dict) else None
     return text if isinstance(text, str) else ""
+
+
+def _plainify_mentions(mentions) -> list[dict[str, Any]]:
+    plain_mentions: list[dict[str, Any]] = []
+    for mention in mentions or []:
+        mention_id = getattr(mention, "id", None)
+        plain_mentions.append(
+            {
+                "key": getattr(mention, "key", None),
+                "id": {
+                    "open_id": getattr(mention_id, "open_id", None),
+                    "union_id": getattr(mention_id, "union_id", None),
+                    "user_id": getattr(mention_id, "user_id", None),
+                },
+                "name": getattr(mention, "name", None),
+                "tenant_key": getattr(mention, "tenant_key", None),
+            }
+        )
+    return plain_mentions

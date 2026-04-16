@@ -125,7 +125,12 @@ class _FakeFeishuClient:
         self.replies = []
         self.reactions_added = []
         self.reactions_removed = []
+        self.bot_info_calls = 0
         self.closed = False
+
+    async def get_bot_info(self):
+        self.bot_info_calls += 1
+        return {"open_id": "ou_bot", "app_name": "Repo Pulse"}
 
     async def send_text(self, text, receive_id=None):
         self.sent_texts.append((receive_id, text))
@@ -1629,8 +1634,15 @@ async def test_runtime_container_handles_legacy_mention_daily_command():
         {
             "event": {
                 "message": {
-                    "text": "@张三 @任意机器人名 日榜 top 20",
+                    "text": '<at user_id="ou_bot">Repo Pulse</at> 日榜 top 20',
                     "message_id": "om-msg-legacy",
+                    "mentions": [
+                        {
+                            "key": "@_user_1",
+                            "id": {"open_id": "ou_bot"},
+                            "name": "Repo Pulse",
+                        }
+                    ],
                 },
                 "chat_id": "chat-legacy",
             }
@@ -1644,6 +1656,112 @@ async def test_runtime_container_handles_legacy_mention_daily_command():
     assert feishu.sent_posts == []
     assert feishu.reactions_added == [("om-msg-legacy", "Typing")]
     assert feishu.reactions_removed == [("om-msg-legacy", "reaction-1")]
+
+
+@pytest.mark.asyncio
+async def test_runtime_container_ignores_group_member_mention_commands():
+    from repo_pulse.runtime import DetailRequestHandler
+
+    class _UnusedGitHubClient:
+        def __init__(self):
+            self.calls = []
+
+        async def search_repositories(self, query, per_page=1):
+            self.calls.append((query, per_page))
+            return []
+
+    github = _UnusedGitHubClient()
+    feishu = _FakeFeishuClient()
+    orchestrator = _FakeDetailOrchestrator()
+    digest_dispatcher = _FakeDigestDispatcher()
+    handler = DetailRequestHandler(
+        github_client=github,
+        detail_orchestrator=orchestrator,
+        feishu_client=feishu,
+        digest_dispatcher=digest_dispatcher,
+        about_doc_url=_ABOUT_DOC_URL,
+    )
+
+    await handler.handle_event(
+        {
+            "event": {
+                "message": {
+                    "text": '<at user_id="ou_user">张三</at> 日榜',
+                    "message_id": "om-msg-user-mention",
+                    "mentions": [
+                        {
+                            "key": "@_user_1",
+                            "id": {"open_id": "ou_user"},
+                            "name": "张三",
+                        }
+                    ],
+                },
+                "chat_id": "chat-user-mention",
+            }
+        }
+    )
+
+    assert github.calls == []
+    assert orchestrator.calls == []
+    assert digest_dispatcher.calls == []
+    assert feishu.sent_texts == []
+    assert feishu.sent_posts == []
+    assert feishu.reactions_added == []
+    assert feishu.reactions_removed == []
+
+
+@pytest.mark.asyncio
+async def test_runtime_container_replies_to_invalid_bot_mention_command_without_reaction():
+    from repo_pulse.runtime import DetailRequestHandler
+
+    class _UnusedGitHubClient:
+        def __init__(self):
+            self.calls = []
+
+        async def search_repositories(self, query, per_page=1):
+            self.calls.append((query, per_page))
+            return []
+
+    github = _UnusedGitHubClient()
+    feishu = _FakeFeishuClient()
+    orchestrator = _FakeDetailOrchestrator()
+    digest_dispatcher = _FakeDigestDispatcher()
+    handler = DetailRequestHandler(
+        github_client=github,
+        detail_orchestrator=orchestrator,
+        feishu_client=feishu,
+        digest_dispatcher=digest_dispatcher,
+        about_doc_url=_ABOUT_DOC_URL,
+    )
+
+    await handler.handle_event(
+        {
+            "event": {
+                "message": {
+                    "text": '<at user_id="ou_bot">Repo Pulse</at> /unknown',
+                    "message_id": "om-msg-invalid-command",
+                    "mentions": [
+                        {
+                            "key": "@_user_1",
+                            "id": {"open_id": "ou_bot"},
+                            "name": "Repo Pulse",
+                        }
+                    ],
+                },
+                "chat_id": "chat-invalid-command",
+            }
+        }
+    )
+
+    assert github.calls == []
+    assert orchestrator.calls == []
+    assert digest_dispatcher.calls == []
+    assert feishu.sent_texts == [
+        ("chat-invalid-command", "不支持的命令，可使用 /help 查看帮助。")
+    ]
+    assert feishu.sent_posts == []
+    assert feishu.reactions_added == []
+    assert feishu.reactions_removed == []
 
 
 @pytest.mark.asyncio
@@ -1675,8 +1793,15 @@ async def test_runtime_container_can_disable_legacy_mention_commands():
         {
             "event": {
                 "message": {
-                    "text": "@任意机器人名 日榜",
+                    "text": '<at user_id="ou_bot">Repo Pulse</at> 日榜',
                     "message_id": "om-msg-legacy-off",
+                    "mentions": [
+                        {
+                            "key": "@_user_1",
+                            "id": {"open_id": "ou_bot"},
+                            "name": "Repo Pulse",
+                        }
+                    ],
                 },
                 "chat_id": "chat-legacy-off",
             }

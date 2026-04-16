@@ -1,15 +1,23 @@
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 _GITHUB_REPO_PATTERN = re.compile(
     r"https?://(?:www\.)?github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)",
     re.IGNORECASE,
 )
 _SLASH_COMMAND_PATTERN = re.compile(r"^\s*/([A-Za-z]+)(?:\s+(.*?))?\s*$")
-_LEADING_MENTION_TAG_PATTERN = re.compile(r"^\s*<at\b[^>]*>.*?</at>", re.IGNORECASE)
+_LEADING_MENTION_TAG_PATTERN = re.compile(
+    r"^\s*(<at\b[^>]*>(.*?)</at>)",
+    re.IGNORECASE,
+)
 _LEADING_PLAIN_MENTION_PATTERN = re.compile(r"^\s*[@＠][^\s]+")
+_MENTION_TAG_ID_PATTERN = re.compile(
+    r"\b(?:user_id|open_id|union_id)=([\"'])(.*?)\1",
+    re.IGNORECASE,
+)
 
 _ANALYZE_ALIASES = {"a", "analyze"}
 _DAILY_ALIASES = {"d", "daily"}
@@ -101,6 +109,8 @@ def parse_message_command(
     default_top_k: int,
     max_top_k: int,
     allow_legacy_mention_commands: bool = True,
+    mentions: Optional[Sequence[Mapping[str, Any]]] = None,
+    bot_open_id: str = "",
 ) -> MessageCommandParseResult:
     slash_result = parse_slash_command(
         text,
@@ -117,7 +127,11 @@ def parse_message_command(
     if not allow_legacy_mention_commands:
         return MessageCommandParseResult(is_command=False)
 
-    legacy_body = _strip_leading_mentions(text)
+    legacy_body = _strip_leading_bot_mention(
+        text,
+        mentions=mentions,
+        bot_open_id=bot_open_id,
+    )
     if not legacy_body:
         return MessageCommandParseResult(is_command=False)
 
@@ -286,6 +300,136 @@ def _strip_leading_mentions(text: str) -> str:
         break
 
     return " ".join(remaining.split()) if stripped_any else ""
+
+
+def _strip_leading_bot_mention(
+    text: str,
+    mentions: Optional[Sequence[Mapping[str, Any]]],
+    bot_open_id: str,
+) -> str:
+    normalized_bot_open_id = (bot_open_id or "").strip()
+    if not normalized_bot_open_id:
+        if mentions is not None:
+            return ""
+        return _strip_leading_mentions(text)
+
+    bot_mention = _find_bot_mention(mentions, normalized_bot_open_id)
+    if mentions is not None and bot_mention is None:
+        return ""
+
+    remaining = (text or "").strip()
+    if not remaining:
+        return ""
+
+    tag_match = _LEADING_MENTION_TAG_PATTERN.match(remaining)
+    if tag_match is not None:
+        if not _tag_matches_bot_mention(
+            tag_match.group(1),
+            tag_match.group(2) or "",
+            bot_mention,
+            normalized_bot_open_id,
+        ):
+            return ""
+        return " ".join(remaining[tag_match.end() :].split())
+
+    stripped = _strip_leading_plain_bot_mention(
+        remaining,
+        bot_mention,
+        normalized_bot_open_id,
+    )
+    return " ".join(stripped.split()) if stripped is not None else ""
+
+
+def _find_bot_mention(
+    mentions: Optional[Sequence[Mapping[str, Any]]],
+    bot_open_id: str,
+) -> Optional[Mapping[str, Any]]:
+    if mentions is None:
+        return None
+
+    for mention in mentions:
+        if bot_open_id in _mention_ids(mention):
+            return mention
+    return None
+
+
+def _tag_matches_bot_mention(
+    tag_text: str,
+    tag_label: str,
+    bot_mention: Optional[Mapping[str, Any]],
+    bot_open_id: str,
+) -> bool:
+    tag_ids = {
+        match.group(2).strip()
+        for match in _MENTION_TAG_ID_PATTERN.finditer(tag_text)
+        if match.group(2).strip()
+    }
+    candidate_ids = {bot_open_id}
+    candidate_names: set[str] = set()
+    candidate_keys: set[str] = set()
+    if bot_mention is not None:
+        candidate_ids.update(_mention_ids(bot_mention))
+        name = _field(bot_mention, "name")
+        key = _field(bot_mention, "key")
+        if isinstance(name, str) and name.strip():
+            candidate_names.add(name.strip())
+        if isinstance(key, str) and key.strip():
+            candidate_keys.add(key.strip())
+
+    if tag_ids:
+        return bool(tag_ids & candidate_ids)
+    if tag_label.strip() in candidate_names:
+        return True
+    return any(key in tag_text for key in candidate_keys)
+
+
+def _strip_leading_plain_bot_mention(
+    text: str,
+    bot_mention: Optional[Mapping[str, Any]],
+    bot_open_id: str,
+) -> Optional[str]:
+    markers = {"@{0}".format(bot_open_id), "＠{0}".format(bot_open_id)}
+    if bot_mention is not None:
+        key = _field(bot_mention, "key")
+        name = _field(bot_mention, "name")
+        if isinstance(key, str) and key.strip():
+            markers.add(key.strip())
+        if isinstance(name, str) and name.strip():
+            markers.add("@{0}".format(name.strip()))
+            markers.add("＠{0}".format(name.strip()))
+
+    for marker in sorted(markers, key=len, reverse=True):
+        stripped = _strip_plain_marker(text, marker)
+        if stripped is not None:
+            return stripped
+    return None
+
+
+def _strip_plain_marker(text: str, marker: str) -> Optional[str]:
+    if not marker or not text.startswith(marker):
+        return None
+    if len(text) > len(marker) and not text[len(marker)].isspace():
+        return None
+    return text[len(marker) :].lstrip()
+
+
+def _mention_ids(mention: Mapping[str, Any]) -> set[str]:
+    mention_id = _field(mention, "id")
+    return {
+        value.strip()
+        for value in (
+            _field(mention_id, "open_id"),
+            _field(mention_id, "user_id"),
+            _field(mention_id, "union_id"),
+        )
+        if isinstance(value, str) and value.strip()
+    }
+
+
+def _field(value: Any, name: str) -> Any:
+    if isinstance(value, Mapping):
+        return value.get(name)
+    return getattr(value, name, None)
 
 
 def _extract_text_from_content(content: str) -> str:

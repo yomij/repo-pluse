@@ -12,7 +12,7 @@ class _FakeContainer:
         self.payloads.append(payload)
 
 
-def _receive_event(content, message_type="text"):
+def _receive_event(content, message_type="text", mentions=None):
     return SimpleNamespace(
         event=SimpleNamespace(
             message=SimpleNamespace(
@@ -20,6 +20,7 @@ def _receive_event(content, message_type="text"):
                 chat_id="oc-chat",
                 message_type=message_type,
                 content=content,
+                mentions=mentions,
             )
         )
     )
@@ -48,6 +49,57 @@ async def test_long_connection_message_event_is_adapted_to_runtime_payload():
                 "message": {
                     "message_id": "om-user-message",
                     "text": "/a openai/openai-python",
+                },
+            }
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_long_connection_message_event_preserves_mentions():
+    from repo_pulse.feishu.ws_client import FeishuLongConnectionClient
+
+    container = _FakeContainer()
+    client = FeishuLongConnectionClient(
+        app_id="cli-id",
+        app_secret="secret",
+        container=container,
+        ws_client_factory=lambda **kwargs: SimpleNamespace(start=lambda: None),
+    )
+
+    await client.handle_message_event(
+        _receive_event(
+            json.dumps({"text": '<at user_id="ou_bot">Repo Pulse</at> 日榜'}),
+            mentions=[
+                SimpleNamespace(
+                    key="@_user_1",
+                    id=SimpleNamespace(open_id="ou_bot", user_id=None, union_id=None),
+                    name="Repo Pulse",
+                    tenant_key="tenant-key",
+                )
+            ],
+        )
+    )
+
+    assert container.payloads == [
+        {
+            "event": {
+                "chat_id": "oc-chat",
+                "message": {
+                    "message_id": "om-user-message",
+                    "text": '<at user_id="ou_bot">Repo Pulse</at> 日榜',
+                    "mentions": [
+                        {
+                            "key": "@_user_1",
+                            "id": {
+                                "open_id": "ou_bot",
+                                "union_id": None,
+                                "user_id": None,
+                            },
+                            "name": "Repo Pulse",
+                            "tenant_key": "tenant-key",
+                        }
+                    ],
                 },
             }
         }

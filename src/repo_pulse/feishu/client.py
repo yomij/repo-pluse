@@ -18,6 +18,12 @@ class FeishuChat:
     external: bool = False
 
 
+@dataclass(frozen=True)
+class FeishuBotInfo:
+    open_id: str
+    app_name: str = ""
+
+
 class FeishuClient:
     def __init__(
         self,
@@ -44,6 +50,8 @@ class FeishuClient:
         self._tenant_access_token: Optional[str] = None
         self._tenant_access_token_expires_at: float = 0.0
         self._token_lock = asyncio.Lock()
+        self._bot_info: Optional[FeishuBotInfo] = None
+        self._bot_info_lock = asyncio.Lock()
 
     async def close(self) -> None:
         if self._owns_http_client:
@@ -90,6 +98,37 @@ class FeishuClient:
     async def _authorized_headers(self) -> Dict[str, str]:
         token = await self.tenant_access_token()
         return {'Authorization': f'Bearer {token}'}
+
+    async def get_bot_info(self, force_refresh: bool = False) -> FeishuBotInfo:
+        if not force_refresh and self._bot_info is not None:
+            return self._bot_info
+
+        async with self._bot_info_lock:
+            if not force_refresh and self._bot_info is not None:
+                return self._bot_info
+
+            headers = await self._authorized_headers()
+            response = await self._http_client.get(
+                f'{self._base_url}/bot/v3/info',
+                headers=headers,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if payload.get('code') != 0:
+                raise RuntimeError('Failed to get Feishu bot info')
+
+            bot_payload = payload.get('bot')
+            if not isinstance(bot_payload, dict):
+                bot_payload = ((payload.get('data') or {}).get('bot') or payload.get('data') or {})
+            open_id = str(bot_payload.get('open_id') or '').strip()
+            if not open_id:
+                raise RuntimeError('Feishu bot open_id missing in response')
+
+            self._bot_info = FeishuBotInfo(
+                open_id=open_id,
+                app_name=str(bot_payload.get('app_name') or '').strip(),
+            )
+            return self._bot_info
 
     async def send_text(self, text: str, receive_id: Optional[str] = None) -> Dict[str, Any]:
         request = im_v1.CreateMessageRequest.builder().receive_id_type('chat_id').request_body(

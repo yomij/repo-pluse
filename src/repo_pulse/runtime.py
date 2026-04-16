@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from typing import Optional, Sequence
+from typing import Any, Optional, Sequence
 from uuid import uuid4
 
 from repo_pulse.config import Settings, get_settings
@@ -83,6 +83,8 @@ class DetailRequestHandler:
         self.manual_digest_max_top_k = manual_digest_max_top_k
         self.about_doc_url = about_doc_url
         self.allow_legacy_mention_commands = allow_legacy_mention_commands
+        self._bot_open_id: Optional[str] = None
+        self._bot_identity_loaded = False
 
     async def handle_event(self, payload):
         event = payload.get("event") or {}
@@ -94,13 +96,20 @@ class DetailRequestHandler:
         )
         message_text = extract_message_text(message)
         message_id = message.get("message_id")
+        bot_open_id = await self._get_bot_open_id_for_message(message_text, message)
         command_result = parse_message_command(
             message_text,
             default_top_k=self.manual_digest_default_top_k,
             max_top_k=self.manual_digest_max_top_k,
             allow_legacy_mention_commands=self.allow_legacy_mention_commands,
+            mentions=message.get("mentions"),
+            bot_open_id=bot_open_id,
         )
         if not command_result.is_command:
+            return
+
+        if command_result.command is None:
+            await self._handle_command(command_result, receive_id)
             return
 
         await self._execute_with_processing_reaction(
@@ -248,6 +257,31 @@ class DetailRequestHandler:
                         message_id,
                         exc,
                     )
+
+    async def _get_bot_open_id_for_message(self, message_text: str, message: dict[str, Any]) -> str:
+        if not self.allow_legacy_mention_commands:
+            return ""
+        if not _looks_like_legacy_mention_message(message_text, message.get("mentions")):
+            return ""
+        return await self._get_bot_open_id()
+
+    async def _get_bot_open_id(self) -> str:
+        if self._bot_identity_loaded:
+            return self._bot_open_id or ""
+
+        self._bot_identity_loaded = True
+        get_bot_info = getattr(self.feishu_client, "get_bot_info", None)
+        if not callable(get_bot_info):
+            return ""
+
+        try:
+            bot_info = await get_bot_info()
+        except Exception as exc:
+            logger.warning("Failed to fetch Feishu bot info: %s", exc)
+            return ""
+
+        self._bot_open_id = _extract_bot_open_id(bot_info)
+        return self._bot_open_id or ""
 
     async def _resolve_repo(
         self, query: str, repo_url: Optional[str] = None
@@ -491,6 +525,25 @@ def _resolve_default_feishu_chat_ids(settings: Settings) -> list[str]:
         for chat_id in settings.feishu_chat_ids
         if str(chat_id).strip()
     ]
+
+
+def _looks_like_legacy_mention_message(
+    message_text: str,
+    mentions: Optional[Sequence[dict[str, Any]]],
+) -> bool:
+    if mentions:
+        return True
+    normalized = (message_text or "").lstrip()
+    return normalized.startswith(("<at", "@", "＠"))
+
+
+def _extract_bot_open_id(bot_info: Any) -> str:
+    if isinstance(bot_info, dict):
+        nested = bot_info.get("bot")
+        if isinstance(nested, dict):
+            return str(nested.get("open_id") or "").strip()
+        return str(bot_info.get("open_id") or "").strip()
+    return str(getattr(bot_info, "open_id", "") or "").strip()
 
 
 def _build_research_provider(settings: Settings) -> tuple[ResearchProvider, list]:
