@@ -52,15 +52,18 @@ def _valid_payload(**overrides):
                 "label": "Python 3.11+",
                 "detail": "The examples assume a modern Python runtime.",
                 "source": "README quickstart",
+                "source_url": "https://github.com/acme/agent#quickstart",
             }
         ],
         "trial_time_estimate": "10-15 minutes",
         "quickstart_steps": [
             {
                 "label": "Install dependencies",
-                "action": "Run `uv sync` in the repository root.",
+                "action": "Install dependencies from the repository root.",
+                "commands": [{"language": "bash", "code": "uv sync"}],
                 "expected_result": "Dependencies install without errors.",
                 "source": "README quickstart",
+                "source_url": "https://github.com/acme/agent#quickstart",
             }
         ],
         "success_signal": "The sample command prints a successful agent response.",
@@ -69,6 +72,7 @@ def _valid_payload(**overrides):
                 "label": "Missing API key",
                 "detail": "The default example needs an API key in the environment.",
                 "source": "Docs authentication section",
+                "source_url": "https://github.com/acme/agent/blob/main/docs/authentication.md",
             }
         ],
         "best_practices": ["Pin model versions", "Track eval metrics"],
@@ -109,7 +113,9 @@ def test_build_research_prompt_requires_onboarding_schema():
     assert '"label": "字符串"' in prompt
     assert '"detail": "字符串"' in prompt
     assert '"action": "字符串"' in prompt
+    assert '"commands": [' in prompt
     assert '"expected_result": "字符串"' in prompt
+    assert '"source_url": "字符串，可选"' in prompt
     assert "trial_verdict、quickstart_steps、success_signal 三者必须相互一致" in prompt
     assert '"quickstart":' not in prompt
 
@@ -235,15 +241,24 @@ async def test_openai_provider_parses_output_text_citations():
     assert result.trial_requirements[0].label == "Python 3.11+"
     assert result.trial_requirements[0].detail == "The examples assume a modern Python runtime."
     assert result.trial_requirements[0].source == "README quickstart"
+    assert result.trial_requirements[0].source_url == "https://github.com/acme/agent#quickstart"
     assert result.trial_time_estimate == "10-15 minutes"
     assert result.quickstart_steps[0].label == "Install dependencies"
-    assert result.quickstart_steps[0].action == "Run `uv sync` in the repository root."
+    assert result.quickstart_steps[0].action == "Install dependencies from the repository root."
+    assert len(result.quickstart_steps[0].commands) == 1
+    assert result.quickstart_steps[0].commands[0].language == "bash"
+    assert result.quickstart_steps[0].commands[0].code == "uv sync"
     assert result.quickstart_steps[0].expected_result == "Dependencies install without errors."
     assert result.quickstart_steps[0].source == "README quickstart"
+    assert result.quickstart_steps[0].source_url == "https://github.com/acme/agent#quickstart"
     assert result.success_signal == "The sample command prints a successful agent response."
     assert result.common_blockers[0].label == "Missing API key"
     assert result.common_blockers[0].detail == "The default example needs an API key in the environment."
     assert result.common_blockers[0].source == "Docs authentication section"
+    assert (
+        result.common_blockers[0].source_url
+        == "https://github.com/acme/agent/blob/main/docs/authentication.md"
+    )
     assert result.best_practices == ["Pin model versions", "Track eval metrics"]
     assert result.risks == ["Breaking API changes"]
     assert len(result.citations) == 1

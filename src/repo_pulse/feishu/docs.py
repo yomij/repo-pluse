@@ -182,7 +182,7 @@ class FeishuDocsClient:
                 return total
 
     async def _append_markdown_blocks(self, document_id: str, markdown: str) -> None:
-        blocks = [docx_v1.Block(_markdown_line_to_block(line)) for line in _markdown_lines(markdown)]
+        blocks = [docx_v1.Block(block) for block in _markdown_to_blocks(markdown)]
         if not blocks:
             return
 
@@ -260,25 +260,82 @@ def _document_title(full_name: str) -> str:
     return "{0} 项目详情".format(full_name)
 
 
-def _markdown_lines(markdown: str) -> List[str]:
-    return [line.strip() for line in markdown.splitlines() if line.strip()]
+def _markdown_to_blocks(markdown: str) -> List[Dict[str, object]]:
+    blocks: List[Dict[str, object]] = []
+    paragraph_lines: List[str] = []
+    code_lines: List[str] = []
+    in_code_block = False
+
+    def flush_paragraph() -> None:
+        nonlocal paragraph_lines
+        if not paragraph_lines:
+            return
+        blocks.append(_build_block(2, "text", "\n".join(paragraph_lines).strip()))
+        paragraph_lines = []
+
+    for raw_line in (markdown or "").splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip()
+
+        if in_code_block:
+            if stripped.startswith("```"):
+                blocks.append(_build_block(14, "code", "\n".join(code_lines).strip(), preserve_text=True))
+                code_lines = []
+                in_code_block = False
+            else:
+                code_lines.append(line)
+            continue
+
+        if stripped.startswith("```"):
+            flush_paragraph()
+            in_code_block = True
+            code_lines = []
+            continue
+
+        if not stripped:
+            flush_paragraph()
+            continue
+
+        if stripped.startswith("# "):
+            flush_paragraph()
+            blocks.append(_build_block(3, "heading1", stripped[2:].strip()))
+            continue
+
+        if stripped.startswith("## "):
+            flush_paragraph()
+            blocks.append(_build_block(4, "heading2", stripped[3:].strip()))
+            continue
+
+        ordered_match = re.match(r"^\d+\.\s+(.*)$", stripped)
+        if ordered_match:
+            flush_paragraph()
+            blocks.append(_build_block(13, "ordered", ordered_match.group(1).strip()))
+            continue
+
+        if stripped.startswith("- "):
+            flush_paragraph()
+            blocks.append(_build_block(12, "bullet", stripped[2:].strip()))
+            continue
+
+        paragraph_lines.append(stripped)
+
+    flush_paragraph()
+    if in_code_block and code_lines:
+        blocks.append(_build_block(14, "code", "\n".join(code_lines).strip(), preserve_text=True))
+    return blocks
 
 
-def _markdown_line_to_block(line: str) -> Dict[str, object]:
-    if line.startswith("# "):
-        return _build_block(3, "heading1", line[2:].strip())
-    if line.startswith("## "):
-        return _build_block(4, "heading2", line[3:].strip())
-    if line.startswith("- "):
-        return _build_block(12, "bullet", line[2:].strip())
-    return _build_block(2, "text", line)
-
-
-def _build_block(block_type: int, block_key: str, text: str) -> Dict[str, object]:
+def _build_block(
+    block_type: int,
+    block_key: str,
+    text: str,
+    *,
+    preserve_text: bool = False,
+) -> Dict[str, object]:
     return {
         "block_type": block_type,
         block_key: {
-            "elements": _build_text_elements(text),
+            "elements": [_text_run(text)] if preserve_text else _build_text_elements(text),
         },
     }
 
@@ -452,25 +509,41 @@ def _render_quickstart_steps(
     *,
     trial_verdict: str = "",
 ) -> str:
-    lines = []
-    for step in steps or []:
+    sections = []
+    for index, step in enumerate(steps or [], start=1):
         label = _read_field(step, "label")
         action = _read_field(step, "action")
         expected_result = _read_field(step, "expected_result")
         source = _read_field(step, "source")
+        source_url = _read_field(step, "source_url")
         if not all((label, action, expected_result, source)):
             continue
-        lines.append(
-            "{0}. **{1}**：{2}（预期：{3}；来源：{4}）".format(
-                len(lines) + 1,
-                label,
-                action,
-                expected_result,
-                source,
+
+        lines = [
+            "{0}. **{1}**".format(index, label),
+            "",
+            "动作：{0}".format(_normalize_inline_markdown(action)),
+        ]
+        for command in _read_command_blocks(step, fallback_text=action):
+            lines.extend(
+                [
+                    "",
+                    "```{0}".format(command["language"]),
+                    command["code"],
+                    "```",
+                ]
             )
+        lines.extend(
+            [
+                "",
+                "预期：{0}".format(expected_result),
+                "来源：{0}".format(_render_source_reference(source, source_url)),
+            ]
         )
-    if lines:
-        return "\n".join(lines)
+        sections.append("\n".join(lines))
+
+    if sections:
+        return "\n\n".join(sections)
     fallback = _trial_verdict_quickstart_fallback(trial_verdict)
     if fallback:
         return fallback
@@ -489,9 +562,16 @@ def _render_onboarding_facts(
         label = _read_field(item, "label")
         detail = _read_field(item, "detail")
         source = _read_field(item, "source")
+        source_url = _read_field(item, "source_url")
         if not all((label, detail, source)):
             continue
-        lines.append("- **{0}**：{1}（来源：{2}）".format(label, detail, source))
+        lines.append(
+            "- **{0}**：{1}（来源：{2}）".format(
+                label,
+                detail,
+                _render_source_reference(source, source_url),
+            )
+        )
     if lines:
         return "\n".join(lines)
     fallback = _trial_verdict_fact_fallback(trial_verdict, fallback_kind)
@@ -512,10 +592,15 @@ def _render_blockers_with_success_signal(
         label = _read_field(item, "label")
         detail = _read_field(item, "detail")
         source = _read_field(item, "source")
+        source_url = _read_field(item, "source_url")
         if not all((label, detail, source)):
             continue
         blocker_lines.append(
-            "- 阻塞：**{0}**：{1}（来源：{2}）".format(label, detail, source)
+            "- 阻塞：**{0}**：{1}（来源：{2}）".format(
+                label,
+                detail,
+                _render_source_reference(source, source_url),
+            )
         )
     if blocker_lines:
         lines.extend(blocker_lines)
@@ -563,6 +648,69 @@ def _read_field(item: object, field_name: str) -> str:
     if isinstance(value, str):
         return value.strip()
     return ""
+
+
+def _read_command_blocks(item: object, *, fallback_text: str = "") -> List[Dict[str, str]]:
+    value = item.get("commands", []) if isinstance(item, dict) else getattr(item, "commands", [])
+    commands: List[Dict[str, str]] = []
+    for command in value or []:
+        if isinstance(command, dict):
+            code = str(command.get("code", "")).strip()
+            language = str(command.get("language", "") or "bash").strip()
+        else:
+            code = str(getattr(command, "code", "")).strip()
+            language = str(getattr(command, "language", "") or "bash").strip()
+        if code:
+            commands.append(
+                {
+                    "code": _normalize_command_code(code),
+                    "language": language or "bash",
+                }
+            )
+    if commands:
+        return commands
+    return _extract_inline_command_blocks(fallback_text)
+
+
+def _extract_inline_command_blocks(text: str) -> List[Dict[str, str]]:
+    commands = []
+    for match in re.finditer(r"`([^`]+)`", text or ""):
+        code = match.group(1).strip()
+        if code:
+            commands.append({"code": _normalize_command_code(code), "language": "bash"})
+    return commands
+
+
+def _normalize_command_code(code: str) -> str:
+    normalized = (code or "").strip()
+    if not normalized:
+        return ""
+
+    if any(token in normalized for token in ("\\r\\n", "\\n", "\\t", '\\"', "\\'")):
+        normalized = (
+            normalized.replace("\\r\\n", "\n")
+            .replace("\\n", "\n")
+            .replace("\\t", "\t")
+            .replace('\\"', '"')
+            .replace("\\'", "'")
+        )
+    return normalized
+
+
+def _render_source_reference(source: str, source_url: str = "") -> str:
+    label = (source or "").strip()
+    url = (source_url or "").strip()
+    if url:
+        return "[{0}]({1})".format(label or "来源", url)
+
+    match = _MARKDOWN_LINK_PATTERN.fullmatch(label)
+    if match:
+        return label
+
+    if label.startswith("http://") or label.startswith("https://"):
+        return "[来源]({0})".format(label)
+
+    return label or "信息不足以确认"
 
 
 def _trial_verdict_quickstart_fallback(trial_verdict: str) -> str:

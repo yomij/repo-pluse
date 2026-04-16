@@ -8,6 +8,7 @@ import httpx
 
 from repo_pulse.feishu.docs import FeishuDocsClient
 from repo_pulse.research.base import (
+    CommandBlock,
     OnboardingFact,
     QuickstartStep,
     ResearchResult,
@@ -67,7 +68,16 @@ async def test_feishu_docs_client_creates_document_and_appends_blocks():
     )
     doc_url = await client.upsert_project_doc(
         "acme/agent",
-        "# acme/agent 项目详情\n\n## 它是什么\n一个项目。\n\n- [README](https://github.com/acme/agent)\n",
+        (
+            "# acme/agent 项目详情\n\n"
+            "## 最短体验路径\n\n"
+            "1. **安装依赖**\n\n"
+            "动作：运行以下命令。\n\n"
+            "```bash\n"
+            "uv sync\n"
+            "```\n\n"
+            "来源：[README](https://github.com/acme/agent)\n"
+        ),
     )
 
     assert doc_url == "https://feishu.cn/docx/doc-123"
@@ -84,9 +94,14 @@ async def test_feishu_docs_client_creates_document_and_appends_blocks():
     assert payload.children[0].block_type == 3
     assert payload.children[0].heading1.elements[0].text_run.content == "acme/agent 项目详情"
     assert payload.children[1].block_type == 4
-    assert payload.children[2].block_type == 2
-    assert payload.children[3].block_type == 12
-    link_style = payload.children[3].bullet.elements[0].text_run.text_element_style
+    assert payload.children[2].block_type == 13
+    assert payload.children[2].ordered.elements[0].text_run.content == "安装依赖"
+    assert payload.children[3].block_type == 2
+    assert payload.children[3].text.elements[0].text_run.content == "动作：运行以下命令。"
+    assert payload.children[4].block_type == 14
+    assert payload.children[4].code.elements[0].text_run.content == "uv sync"
+    assert payload.children[5].block_type == 2
+    link_style = payload.children[5].text.elements[1].text_run.text_element_style
     assert "https%3A%2F%2Fgithub.com%2Facme%2Fagent" in link_style.link.url
     patch_public_request = patch_public.calls[0][0]
     assert patch_public_request.type == "docx"
@@ -276,21 +291,26 @@ def test_render_project_markdown_uses_onboarding_first_structure():
                 label="Python 3.11+",
                 detail="示例运行依赖 Python 环境。",
                 source="README / Quick Start",
+                source_url="https://github.com/acme/agent#quick-start",
             )
         ],
         trial_time_estimate="3-10 分钟",
         quickstart_steps=[
             QuickstartStep(
                 label="安装依赖",
-                action="运行 `uv sync`。",
+                action="安装项目依赖。",
+                commands=[CommandBlock(language="bash", code="uv sync")],
                 expected_result="依赖安装完成。",
                 source="README / Quick Start",
+                source_url="https://github.com/acme/agent#quick-start",
             ),
             QuickstartStep(
                 label="启动示例",
-                action="运行 `uv run python examples/demo.py`。",
+                action="启动官方 demo。",
+                commands=[CommandBlock(language="bash", code="uv run python examples/demo.py")],
                 expected_result="终端输出 successful response。",
                 source="README / Quick Start",
+                source_url="https://github.com/acme/agent#quick-start",
             ),
         ],
         success_signal="示例命令输出 successful response。",
@@ -299,6 +319,7 @@ def test_render_project_markdown_uses_onboarding_first_structure():
                 label="缺少 API Key",
                 detail="未设置环境变量会导致示例启动失败。",
                 source="README / Troubleshooting",
+                source_url="https://github.com/acme/agent#troubleshooting",
             )
         ],
         best_practices=["先跑最小 demo"],
@@ -320,6 +341,8 @@ def test_render_project_markdown_uses_onboarding_first_structure():
     assert "## 生成元数据" in markdown
     assert "## 快速上手" not in markdown
     assert "1. **安装依赖**" in markdown
+    assert "```bash\nuv sync\n```" in markdown
+    assert "来源：[README / Quick Start](https://github.com/acme/agent#quick-start)" in markdown
     assert "- 成功信号：示例命令输出 successful response。" in markdown
     assert "- 阻塞：**缺少 API Key**" in markdown
 
@@ -346,10 +369,68 @@ def test_render_project_markdown_maps_trial_verdict_and_time_estimate():
     assert "**缺少 API Key / 凭证**" in markdown
 
 
-def test_markdown_line_to_block_strips_inline_markdown_markers():
-    from repo_pulse.feishu.docs import _markdown_line_to_block
+def test_render_project_markdown_normalizes_escaped_multiline_code_blocks():
+    from repo_pulse.feishu.docs import render_project_markdown
 
-    block = _markdown_line_to_block("1. **安装依赖**：运行 `uv sync`。")
+    result = ResearchResult(
+        what_it_is="这是一个 agent 平台。",
+        why_now="社区增长很快。",
+        trial_verdict="can_run_locally",
+        trial_requirements=[
+            OnboardingFact(
+                label="Python 3.11+",
+                detail="示例运行依赖 Python 环境。",
+                source="README / Quick Start",
+            )
+        ],
+        trial_time_estimate="3-10 分钟",
+        quickstart_steps=[
+            QuickstartStep(
+                label="运行最小示例",
+                action="执行同步 Chat Completions 调用。",
+                commands=[
+                    CommandBlock(
+                        language="python",
+                        code=(
+                            "from openai import OpenAI\\n"
+                            "client = OpenAI()\\n"
+                            "print(\\\"hello\\\")"
+                        ),
+                    )
+                ],
+                expected_result="输出模型响应。",
+                source="README / Quick Start",
+            )
+        ],
+        success_signal="输出模型响应。",
+        common_blockers=[],
+        best_practices=[],
+        risks=[],
+    )
 
-    assert block["block_type"] == 2
-    assert block["text"]["elements"][0]["text_run"]["content"] == "1. 安装依赖：运行 uv sync。"
+    markdown = render_project_markdown("acme/agent", result)
+
+    assert "```python\nfrom openai import OpenAI\nclient = OpenAI()\nprint(\"hello\")\n```" in markdown
+    assert "\\nclient = OpenAI()" not in markdown
+    assert "\\\"hello\\\"" not in markdown
+
+
+def test_markdown_to_blocks_supports_ordered_code_and_short_links():
+    from repo_pulse.feishu.docs import _markdown_to_blocks
+
+    blocks = _markdown_to_blocks(
+        (
+            "1. **安装依赖**\n\n"
+            "动作：运行以下命令。\n\n"
+            "```bash\n"
+            "uv sync\n"
+            "```\n\n"
+            "来源：[README](https://github.com/acme/agent)\n"
+        )
+    )
+
+    assert [block["block_type"] for block in blocks] == [13, 2, 14, 2]
+    assert blocks[0]["ordered"]["elements"][0]["text_run"]["content"] == "安装依赖"
+    assert blocks[1]["text"]["elements"][0]["text_run"]["content"] == "动作：运行以下命令。"
+    assert blocks[2]["code"]["elements"][0]["text_run"]["content"] == "uv sync"
+    assert blocks[3]["text"]["elements"][1]["text_run"]["content"] == "README"

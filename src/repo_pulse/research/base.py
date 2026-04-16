@@ -12,6 +12,12 @@ class Citation:
     snippet: Optional[str] = None
 
 
+@dataclass
+class CommandBlock:
+    code: str
+    language: str = "bash"
+
+
 TRIAL_VERDICT_CAN_RUN_LOCALLY = "can_run_locally"
 TRIAL_VERDICT_NEEDS_API_KEY = "needs_api_key"
 TRIAL_VERDICT_NEEDS_CLOUD_RESOURCE = "needs_cloud_resource"
@@ -34,6 +40,7 @@ class OnboardingFact:
     label: str
     detail: str
     source: str
+    source_url: str = ""
 
 
 @dataclass
@@ -42,6 +49,8 @@ class QuickstartStep:
     action: str
     expected_result: str
     source: str
+    source_url: str = ""
+    commands: List[CommandBlock] = field(default_factory=list)
 
 
 @dataclass
@@ -145,13 +154,21 @@ def _parse_onboarding_facts(value, *, field_name: str) -> List[OnboardingFact]:
         label = item.get("label", "")
         detail = item.get("detail", "")
         source = item.get("source", "")
+        source_url = _parse_optional_string_field(item, "source_url", field_name_prefix=field_name)
         if not isinstance(label, str) or not label.strip():
             raise ValueError(f"{field_name}.label must be a non-empty string")
         if not isinstance(detail, str) or not detail.strip():
             raise ValueError(f"{field_name}.detail must be a non-empty string")
         if not isinstance(source, str) or not source.strip():
             raise ValueError(f"{field_name}.source must be a non-empty string")
-        items.append(OnboardingFact(label=label, detail=detail, source=source))
+        items.append(
+            OnboardingFact(
+                label=label,
+                detail=detail,
+                source=source,
+                source_url=source_url,
+            )
+        )
 
     return items
 
@@ -173,6 +190,8 @@ def _parse_quickstart_steps(value, *, field_name: str) -> List[QuickstartStep]:
         action = item.get("action", "")
         expected_result = item.get("expected_result", "")
         source = item.get("source", "")
+        source_url = _parse_optional_string_field(item, "source_url", field_name_prefix=field_name)
+        commands = _parse_command_blocks(item.get("commands", []), field_name=field_name)
         if not isinstance(label, str) or not label.strip():
             raise ValueError(f"{field_name}.label must be a non-empty string")
         if not isinstance(action, str) or not action.strip():
@@ -187,9 +206,33 @@ def _parse_quickstart_steps(value, *, field_name: str) -> List[QuickstartStep]:
                 action=action,
                 expected_result=expected_result,
                 source=source,
+                source_url=source_url,
+                commands=commands,
             )
         )
 
+    return items
+
+
+def _parse_command_blocks(value, *, field_name: str) -> List[CommandBlock]:
+    if value in (None, ""):
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name}.commands must be a list of objects with code and optional language")
+
+    items: List[CommandBlock] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError(f"{field_name}.commands must be a list of objects with code and optional language")
+        code = item.get("code", "")
+        language = item.get("language", "bash")
+        if not isinstance(code, str) or not code.strip():
+            raise ValueError(f"{field_name}.commands.code must be a non-empty string")
+        if language in (None, ""):
+            language = "bash"
+        if not isinstance(language, str) or not language.strip():
+            raise ValueError(f"{field_name}.commands.language must be a non-empty string")
+        items.append(CommandBlock(code=code.strip(), language=language.strip()))
     return items
 
 
@@ -215,6 +258,15 @@ def _parse_metadata(value, *, field_name: str) -> dict[str, str]:
             raise ValueError(f"{field_name} must only contain string keys and values")
         parsed[key] = item
     return parsed
+
+
+def _parse_optional_string_field(payload: dict, field_name: str, *, field_name_prefix: str) -> str:
+    value = payload.get(field_name, "")
+    if value in (None, ""):
+        return ""
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name_prefix}.{field_name} must be a string")
+    return value.strip()
 
 
 def _is_placeholder_text(value: str) -> bool:

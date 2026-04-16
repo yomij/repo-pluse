@@ -557,7 +557,8 @@ def _build_structurer_user_prompt(
         "    {\n"
         '      "label": "字符串",\n'
         '      "detail": "字符串",\n'
-        '      "source": "字符串"\n'
+        '      "source": "字符串",\n'
+        '      "source_url": "字符串，可选"\n'
         "    }\n"
         "  ],\n"
         '  "trial_time_estimate": "字符串",\n'
@@ -565,8 +566,15 @@ def _build_structurer_user_prompt(
         "    {\n"
         '      "label": "字符串",\n'
         '      "action": "字符串",\n'
+        '      "commands": [\n'
+        "        {\n"
+        '          "language": "字符串，可选，默认 bash",\n'
+        '          "code": "字符串"\n'
+        "        }\n"
+        "      ],\n"
         '      "expected_result": "字符串",\n'
-        '      "source": "字符串"\n'
+        '      "source": "字符串",\n'
+        '      "source_url": "字符串，可选"\n'
         "    }\n"
         "  ],\n"
         '  "success_signal": "字符串",\n'
@@ -574,7 +582,8 @@ def _build_structurer_user_prompt(
         "    {\n"
         '      "label": "字符串",\n'
         '      "detail": "字符串",\n'
-        '      "source": "字符串"\n'
+        '      "source": "字符串",\n'
+        '      "source_url": "字符串，可选"\n'
         "    }\n"
         "  ],\n"
         '  "best_practices": ["字符串"],\n'
@@ -598,8 +607,8 @@ def _build_structurer_user_prompt(
         + "- best_practices / risks 必须是数组；\n"
         + "- citations 尽量引用官方来源，且保留 URL；\n"
         + "- quickstart 已移除，必须改用 quickstart_steps；不要输出 quickstart 字段。\n"
-        + "- trial_requirements 与 common_blockers 必须是包含 label、detail、source 的对象数组。\n"
-        + "- quickstart_steps 必须是包含 label、action、expected_result、source 的对象数组，并且必须给出最短且现实可行的首次运行路径。\n"
+        + "- trial_requirements 与 common_blockers 必须是包含 label、detail、source 的对象数组；如能确认来源链接，可补充 source_url，否则写空字符串。\n"
+        + "- quickstart_steps 必须是包含 label、action、expected_result、source 的对象数组，并且必须给出最短且现实可行的首次运行路径；如能确认精确命令，请填入 commands 数组，否则留空数组。\n"
         + "- 仅在仓库材料或权威公开来源明确支持时才能写出具体命令；优先参考官方文档与仓库作者提供的示例。\n"
         + "- 不能确认命令时，必须明确写“信息不足以确认”，不要编造命令、脚本或运行步骤。\n"
         + "- 阻塞项必须放入 common_blockers，不要埋在 risks；risks 仅用于更广义的工程风险。\n"

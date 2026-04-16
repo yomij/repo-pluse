@@ -1,6 +1,7 @@
 import pytest
 
 from repo_pulse.research.base import (
+    CommandBlock,
     TRIAL_VERDICT_CAN_RUN_LOCALLY,
     TRIAL_VERDICT_NEEDS_API_KEY,
     TRIAL_VERDICT_SOURCE_READING_ONLY,
@@ -24,15 +25,18 @@ def _payload(**overrides):
                 "label": "API key",
                 "detail": "Requires an OpenAI-compatible API key for the first run",
                 "source": "docs/getting-started.md",
+                "source_url": "https://github.com/acme/agent/blob/main/docs/getting-started.md",
             }
         ],
         "trial_time_estimate": "10-15 minutes",
         "quickstart_steps": [
             {
                 "label": "Install dependencies",
-                "action": "Create a virtualenv and install the package with uv",
+                "action": "Create a virtualenv and install the package with uv.",
+                "commands": [{"language": "bash", "code": "uv sync"}],
                 "expected_result": "The package installs without dependency resolution errors",
                 "source": "README.md",
+                "source_url": "https://github.com/acme/agent#readme",
             },
             {
                 "label": "Run the example",
@@ -47,6 +51,7 @@ def _payload(**overrides):
                 "label": "Missing API credentials",
                 "detail": "The sample fails if the provider API key is absent from the environment",
                 "source": "README.md",
+                "source_url": "https://github.com/acme/agent#readme",
             },
             {
                 "label": "Unsupported Python version",
@@ -91,15 +96,18 @@ def test_parse_research_result_payload_builds_contract_and_merges_metadata():
                 label="API key",
                 detail="Requires an OpenAI-compatible API key for the first run",
                 source="docs/getting-started.md",
+                source_url="https://github.com/acme/agent/blob/main/docs/getting-started.md",
             )
         ],
         trial_time_estimate="10-15 minutes",
         quickstart_steps=[
             QuickstartStep(
                 label="Install dependencies",
-                action="Create a virtualenv and install the package with uv",
+                action="Create a virtualenv and install the package with uv.",
+                commands=[CommandBlock(language="bash", code="uv sync")],
                 expected_result="The package installs without dependency resolution errors",
                 source="README.md",
+                source_url="https://github.com/acme/agent#readme",
             ),
             QuickstartStep(
                 label="Run the example",
@@ -114,6 +122,7 @@ def test_parse_research_result_payload_builds_contract_and_merges_metadata():
                 label="Missing API credentials",
                 detail="The sample fails if the provider API key is absent from the environment",
                 source="README.md",
+                source_url="https://github.com/acme/agent#readme",
             ),
             OnboardingFact(
                 label="Unsupported Python version",
@@ -202,6 +211,25 @@ def test_parse_research_result_payload_requires_steps_for_local_trials():
             _payload(
                 trial_verdict=TRIAL_VERDICT_CAN_RUN_LOCALLY,
                 quickstart_steps=[],
+            ),
+            citations=[],
+            metadata={},
+        )
+
+
+def test_parse_research_result_payload_rejects_invalid_command_blocks():
+    with pytest.raises(ValueError, match=r"quickstart_steps\.commands"):
+        parse_research_result_payload(
+            _payload(
+                quickstart_steps=[
+                    {
+                        "label": "Install dependencies",
+                        "action": "Install the package",
+                        "commands": [{"language": "bash"}],
+                        "expected_result": "The package installs without dependency resolution errors",
+                        "source": "README.md",
+                    }
+                ]
             ),
             citations=[],
             metadata={},

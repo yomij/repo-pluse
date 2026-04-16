@@ -126,28 +126,120 @@ def _extract_first_section(markdown: str, *headings: str) -> str:
 
 
 def _compress_quickstart_steps(section: str, *, max_steps: int = 3) -> str:
+    parsed_steps = _parse_quickstart_steps(section)
+    if parsed_steps:
+        return "\n".join(
+            "{0}. {1}".format(index, _summarize_quickstart_step(step))
+            for index, step in enumerate(parsed_steps[:max_steps], start=1)
+        )
+
     lines = [line.strip() for line in (section or "").splitlines() if line.strip()]
     if not lines:
         return "信息不足以确认"
 
     steps = []
     for line in lines:
-        match = re.match(r"^\d+\.\s+\*\*(.+?)\*\*：(.*)$", line)
-        if match:
-            label = match.group(1).strip()
-            body = match.group(2).strip()
-            action = body.split("（预期：", 1)[0].strip()
-            steps.append("{0}：{1}".format(label, action))
-        elif re.match(r"^\d+\.\s+", line):
+        if re.match(r"^\d+\.\s+", line):
             steps.append(re.sub(r"^\d+\.\s+", "", line).strip())
         else:
             steps.append(line)
         if len(steps) >= max_steps:
             break
 
-    if not steps:
-        return "信息不足以确认"
-    return "；".join("{0}. {1}".format(index, step) for index, step in enumerate(steps, start=1))
+    return "\n".join("{0}. {1}".format(index, step) for index, step in enumerate(steps, start=1))
+
+
+def _parse_quickstart_steps(section: str) -> list[dict[str, object]]:
+    lines = [line.rstrip() for line in (section or "").splitlines()]
+    steps: list[dict[str, object]] = []
+    current: dict[str, object] | None = None
+    in_code_block = False
+    code_lines: list[str] = []
+
+    def flush_current() -> None:
+        nonlocal current
+        if current is not None:
+            steps.append(current)
+            current = None
+
+    def flush_code_block() -> None:
+        nonlocal code_lines
+        if current is not None and code_lines:
+            current.setdefault("commands", []).append(" ".join(code_lines).strip())
+        code_lines = []
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        if line.startswith("```"):
+            if in_code_block:
+                flush_code_block()
+                in_code_block = False
+            else:
+                in_code_block = True
+                code_lines = []
+            continue
+
+        if in_code_block:
+            code_lines.append(line)
+            continue
+
+        match = re.match(r"^\d+\.\s+\*\*(.+?)\*\*(?::|：)?\s*(.*)$", line)
+        if match:
+            flush_current()
+            current = {
+                "label": match.group(1).strip(),
+                "action": "",
+                "commands": [],
+            }
+            inline_body = match.group(2).strip()
+            if inline_body:
+                current["action"] = inline_body.split("（预期：", 1)[0].strip()
+            continue
+
+        plain_match = re.match(r"^\d+\.\s+(.*)$", line)
+        if plain_match:
+            flush_current()
+            steps.append({"label": "", "action": plain_match.group(1).strip(), "commands": []})
+            continue
+
+        if current is None:
+            continue
+
+        if line.startswith("动作："):
+            current["action"] = line[len("动作：") :].strip()
+            continue
+        if line.startswith("预期：") or line.startswith("来源："):
+            continue
+
+    if in_code_block:
+        flush_code_block()
+    flush_current()
+    return steps
+
+
+def _summarize_quickstart_step(step: dict[str, object]) -> str:
+    label = str(step.get("label", "")).strip()
+    commands = [command for command in step.get("commands", []) if isinstance(command, str) and command.strip()]
+    safe_commands = [command for command in commands if _is_inline_summary_command(command)]
+    if commands and len(safe_commands) == len(commands):
+        body = "运行 {0}".format("；".join("`{0}`".format(command) for command in commands[:2]))
+    else:
+        body = str(step.get("action", "")).strip() or "查看详情文档中的代码示例"
+    if label:
+        return "{0}：{1}".format(label, body)
+    return body
+
+
+def _is_inline_summary_command(command: str) -> bool:
+    normalized = (command or "").strip()
+    if not normalized:
+        return False
+    if "\n" in normalized or "\\n" in normalized:
+        return False
+    return len(normalized) <= 80
 
 
 def _extract_fit_for(section: str) -> str:
@@ -177,7 +269,7 @@ def _extract_main_risks(
             blocker_lines.append(text)
 
     if blocker_lines:
-        return "；".join(blocker_lines[:2])
+        return "\n".join("- {0}".format(item) for item in blocker_lines[:2])
 
     risk_lines = []
     for line in (risks_section or "").splitlines():
@@ -185,7 +277,7 @@ def _extract_main_risks(
         if normalized.startswith("- "):
             risk_lines.append(normalized[2:].strip())
     if risk_lines:
-        return "；".join(risk_lines[:2])
+        return "\n".join("- {0}".format(item) for item in risk_lines[:2])
     for line in (trial_section or "").splitlines():
         normalized = line.strip()
         if normalized.startswith("结论："):

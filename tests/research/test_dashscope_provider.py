@@ -71,15 +71,18 @@ def _structured_payload(**overrides):
                 "label": "Python 3.11+",
                 "detail": "示例依赖 Python 3.11+ 运行时",
                 "source": "README / Setup",
+                "source_url": "https://github.com/acme/agent#setup",
             }
         ],
         "trial_time_estimate": "10-15 分钟",
         "quickstart_steps": [
             {
                 "label": "安装依赖",
-                "action": "运行 `uv sync` 安装依赖",
+                "action": "安装项目依赖。",
+                "commands": [{"language": "bash", "code": "uv sync"}],
                 "expected_result": "依赖安装完成且无错误输出",
                 "source": "README / Quick Start",
+                "source_url": "https://github.com/acme/agent#quick-start",
             }
         ],
         "success_signal": "示例命令返回预期响应",
@@ -88,6 +91,7 @@ def _structured_payload(**overrides):
                 "label": "缺少 API key",
                 "detail": "默认示例需要环境变量中的 API key",
                 "source": "README / Setup",
+                "source_url": "https://github.com/acme/agent#setup",
             }
         ],
         "best_practices": ["先从官方示例开始"],
@@ -183,15 +187,18 @@ async def test_dashscope_provider_calls_deep_research_then_structurer(caplog):
                                 "label": "Docker",
                                 "detail": "依赖 docker compose 启动本地服务",
                                 "source": "README / Setup",
+                                "source_url": "https://github.com/acme/agent#setup",
                             }
                         ],
                         trial_time_estimate="10-20 分钟",
                         quickstart_steps=[
                             {
                                 "label": "启动服务栈",
-                                "action": "运行 `docker compose up`",
+                                "action": "启动本地服务栈。",
+                                "commands": [{"language": "bash", "code": "docker compose up"}],
                                 "expected_result": "核心服务 healthy 且可访问",
                                 "source": "README / Quick Start",
+                                "source_url": "https://github.com/acme/agent#quick-start",
                             }
                         ],
                         success_signal="Web UI 在 localhost 正常响应",
@@ -200,6 +207,7 @@ async def test_dashscope_provider_calls_deep_research_then_structurer(caplog):
                                 "label": "端口冲突",
                                 "detail": "本地 3000/8080 端口占用会导致启动失败",
                                 "source": "README / Troubleshooting",
+                                "source_url": "https://github.com/acme/agent#troubleshooting",
                             }
                         ],
                         metadata={
@@ -238,15 +246,19 @@ async def test_dashscope_provider_calls_deep_research_then_structurer(caplog):
     assert result.trial_requirements[0].label == "Docker"
     assert result.trial_requirements[0].detail == "依赖 docker compose 启动本地服务"
     assert result.trial_requirements[0].source == "README / Setup"
+    assert result.trial_requirements[0].source_url == "https://github.com/acme/agent#setup"
     assert result.trial_time_estimate == "10-20 分钟"
     assert result.quickstart_steps[0].label == "启动服务栈"
-    assert result.quickstart_steps[0].action == "运行 `docker compose up`"
+    assert result.quickstart_steps[0].action == "启动本地服务栈。"
+    assert result.quickstart_steps[0].commands[0].code == "docker compose up"
     assert result.quickstart_steps[0].expected_result == "核心服务 healthy 且可访问"
     assert result.quickstart_steps[0].source == "README / Quick Start"
+    assert result.quickstart_steps[0].source_url == "https://github.com/acme/agent#quick-start"
     assert result.success_signal == "Web UI 在 localhost 正常响应"
     assert result.common_blockers[0].label == "端口冲突"
     assert result.common_blockers[0].detail == "本地 3000/8080 端口占用会导致启动失败"
     assert result.common_blockers[0].source == "README / Troubleshooting"
+    assert result.common_blockers[0].source_url == "https://github.com/acme/agent#troubleshooting"
     assert result.best_practices == ["先从官方示例开始"]
     assert result.risks == ["依赖外部模型服务"]
     assert len(result.citations) == 1
@@ -278,6 +290,8 @@ async def test_dashscope_provider_calls_deep_research_then_structurer(caplog):
     assert '"quickstart_steps": [' in structurer_prompt
     assert '"success_signal": "字符串"' in structurer_prompt
     assert '"common_blockers": [' in structurer_prompt
+    assert '"commands": [' in structurer_prompt
+    assert '"source_url": "字符串，可选"' in structurer_prompt
     assert "quickstart 已移除，必须改用 quickstart_steps" in structurer_prompt
     assert "最短且现实可行的首次运行路径" in structurer_prompt
     assert "不能确认命令时，必须明确写“信息不足以确认”" in structurer_prompt
