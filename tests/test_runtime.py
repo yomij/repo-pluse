@@ -1070,22 +1070,21 @@ async def test_runtime_container_handles_event_and_replies_with_detail_summary()
     assert feishu.reactions_removed == [("om-msg-1", "reaction-1")]
     assert feishu.sent_posts[0][0] == "chat-1"
     assert feishu.sent_posts[0][1] == "📌 acme/agent"
-    assert "🧭 **是什么**" in feishu.sent_posts[0][2]
-    assert "- 这是一个 agent 平台。" in feishu.sent_posts[0][2]
-    assert "🔥 **为什么最近火**" in feishu.sent_posts[0][2]
-    assert "- 社区增长很快。" in feishu.sent_posts[0][2]
-    assert "⚡ **是否能快速试玩**" in feishu.sent_posts[0][2]
-    assert "- 结论：可以快速本地试玩" in feishu.sent_posts[0][2]
-    assert "🚀 **3分钟试玩路径**" in feishu.sent_posts[0][2]
+    assert "**是什么**" in feishu.sent_posts[0][2]
+    assert "这是一个 agent 平台。" in feishu.sent_posts[0][2]
+    assert "**为什么最近火**" in feishu.sent_posts[0][2]
+    assert "社区增长很快。" in feishu.sent_posts[0][2]
+    assert "**是否能快速试玩**" in feishu.sent_posts[0][2]
+    assert "可以快速本地试玩" in feishu.sent_posts[0][2]
+    assert "**3分钟试玩路径**" in feishu.sent_posts[0][2]
     assert "安装依赖" in feishu.sent_posts[0][2]
-    assert "👥 **适合谁**" in feishu.sent_posts[0][2]
-    assert "- 平台团队。" in feishu.sent_posts[0][2]
-    assert "⚠️ **主要风险**" in feishu.sent_posts[0][2]
+    assert "**适合谁**" in feishu.sent_posts[0][2]
+    assert "平台团队。" in feishu.sent_posts[0][2]
+    assert "**主要风险**" in feishu.sent_posts[0][2]
     assert "缺少 API Key" in feishu.sent_posts[0][2]
-    assert "🔗 **相关链接**" in feishu.sent_posts[0][2]
-    assert "- [文档](https://feishu.cn/docx/generated)" in feishu.sent_posts[0][2]
-    assert "- [仓库](https://github.com/acme/agent)" in feishu.sent_posts[0][2]
-    assert feishu.sent_posts[0][2].count("────────────") == 6
+    assert "**文档链接 + 仓库链接**" in feishu.sent_posts[0][2]
+    assert "[文档](https://feishu.cn/docx/generated)" in feishu.sent_posts[0][2]
+    assert "[仓库](https://github.com/acme/agent)" in feishu.sent_posts[0][2]
 
 
 @pytest.mark.asyncio
@@ -2106,6 +2105,47 @@ def test_create_runtime_container_can_disable_legacy_mention_commands():
     )
 
     assert container.detail_handler.allow_legacy_mention_commands is False
+
+
+def test_create_runtime_container_passes_scheduler_timezone(monkeypatch):
+    from repo_pulse.config import Settings
+    from repo_pulse.runtime import create_runtime_container
+
+    captured = {}
+
+    class _FakeScheduler:
+        def start(self):
+            return None
+
+        def shutdown(self, wait=False):
+            del wait
+            return None
+
+        def get_jobs(self):
+            return []
+
+    def fake_build_digest_scheduler(**kwargs):
+        captured.update(kwargs)
+        return _FakeScheduler()
+
+    monkeypatch.setattr(
+        "repo_pulse.runtime.build_digest_scheduler",
+        fake_build_digest_scheduler,
+    )
+
+    create_runtime_container(
+        Settings(
+            feishu_app_id="app-id",
+            feishu_app_secret="app-secret",
+            feishu_chat_ids=["chat-id"],
+            feishu_about_doc_url=_ABOUT_DOC_URL,
+            database_url="sqlite:///:memory:",
+            scheduler_timezone="Asia/Shanghai",
+            _env_file=None,
+        )
+    )
+
+    assert str(captured["scheduler_timezone"]) == "Asia/Shanghai"
 
 
 def test_create_runtime_container_passes_detail_cache_and_evidence_limits(monkeypatch):

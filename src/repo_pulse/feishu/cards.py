@@ -1,7 +1,11 @@
 from repo_pulse.digest.service import DailyDigest
+from repo_pulse.time_utils import format_display_time
 
 
 class CardBuilder:
+    def __init__(self, scheduler_timezone: str = "Asia/Shanghai"):
+        self.scheduler_timezone = scheduler_timezone
+
     def build_digest_card(self, digest: DailyDigest) -> dict:
         elements: list[dict] = []
         for entry in digest.entries:
@@ -66,7 +70,9 @@ class CardBuilder:
                 "is_short": True,
                 "text": {
                     "tag": "plain_text",
-                    "content": f"生成时间：{digest.generated_at or '未提供'}",
+                    "content": "生成时间：{0}".format(
+                        format_display_time(digest.generated_at, self.scheduler_timezone)
+                    ),
                 },
             },
         ]

@@ -103,6 +103,7 @@ uv run python -m repo_pulse.cli select-chat-id --name repo
 
 - `create_app()` 启动时自动创建 runtime container
 - 初始化数据库与日报调度器
+- 调度器默认按 `Asia/Shanghai` 解释 cron，保证 `9:30` 表示北京时间 `09:30`
 - `/internal/run-digest` 可直接触发完整日报链路
 - 日报会通过飞书 `post + md` 发送更稳定的富文本摘要（含 emoji / 列表 / 链接）
 - 日报里“一句话”会优先翻成中文后再推送
@@ -150,6 +151,9 @@ DASHSCOPE_STRUCTURER_RETRY_BACKOFF_SECONDS=1
 
 - `FEISHU_CHAT_IDS`（可选）：默认定时广播群列表，使用逗号分隔；配置后日报/周榜会按该列表逐群推送
 - `FEISHU_ABOUT_DOC_URL`（可选）：`/h` 帮助中“关于我介绍”的目标文档链接；留空时不展示该入口
+- `SCHEDULER_TIMEZONE`（`Asia/Shanghai`）：调度器、时间展示与 GitHub 查询边界日期解释时使用的 IANA 时区
+- `DAILY_DIGEST_CRON`（`30 9 * * 1-5`）：日报 cron 表达式，默认工作日北京时间 `09:30`
+- `WEEKLY_DIGEST_CRON`（`30 9 * * 1`）：周榜 cron 表达式，默认周一北京时间 `09:30`
 - `DETAIL_CACHE_TTL_SECONDS`（`86400`）：项目详情缓存 TTL（秒）
 - `DASHSCOPE_RESEARCH_MAX_RETRIES`（`2`）：研究报告阶段的最大重试次数
 - `DASHSCOPE_RESEARCH_RETRY_BACKOFF_SECONDS`（`1`）：研究报告阶段重试退避基数（秒）

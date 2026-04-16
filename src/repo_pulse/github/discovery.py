@@ -3,14 +3,21 @@ from datetime import datetime, timedelta, timezone
 
 from repo_pulse.github.client import GitHubClient
 from repo_pulse.schemas import RepositoryCandidate
+from repo_pulse.time_utils import to_business_datetime
 
 UTC = timezone.utc
 
 
 class DiscoveryService:
-    def __init__(self, client: GitHubClient, include_topics: list[str]):
+    def __init__(
+        self,
+        client: GitHubClient,
+        include_topics: list[str],
+        scheduler_timezone: str = "Asia/Shanghai",
+    ):
         self.client = client
         self.include_topics = include_topics
+        self.scheduler_timezone = scheduler_timezone
 
     async def collect_candidates(self, now: datetime) -> list[RepositoryCandidate]:
         if not self.include_topics:
@@ -41,7 +48,7 @@ class DiscoveryService:
         return list(deduped.values())
 
     def _build_requests(self, now: datetime) -> list[dict[str, str | int]]:
-        current = self._ensure_utc(now)
+        current = to_business_datetime(self._ensure_utc(now), self.scheduler_timezone)
         created_cutoff = (current - timedelta(days=30)).date().isoformat()
         pushed_cutoff = (current - timedelta(days=7)).date().isoformat()
         requests: list[dict[str, str | int]] = []

@@ -46,6 +46,7 @@ def test_settings_parse_csv_lists_and_defaults(monkeypatch):
     assert settings.detail_cache_ttl_seconds == 86400
     assert settings.daily_digest_cache_ttl_seconds == 7200
     assert settings.weekly_digest_cache_ttl_seconds == 86400
+    assert settings.scheduler_timezone == "Asia/Shanghai"
     assert settings.topic_include == ["ai", "llm", "agents", "devtools"]
 
 
@@ -68,3 +69,13 @@ def test_settings_allow_missing_feishu_chat_ids(monkeypatch):
 
     assert settings.feishu_chat_ids == []
     assert "feishu_chat_id" not in settings.model_dump()
+
+
+def test_settings_allow_overriding_scheduler_timezone(monkeypatch):
+    monkeypatch.setenv("FEISHU_APP_ID", "cli_app_id")
+    monkeypatch.setenv("FEISHU_APP_SECRET", "cli_app_secret")
+    monkeypatch.setenv("SCHEDULER_TIMEZONE", "UTC")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.scheduler_timezone == "UTC"

@@ -3,6 +3,7 @@ import logging
 import time
 from typing import Any, Optional, Sequence
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from repo_pulse.config import Settings, get_settings
 from repo_pulse.db import build_engine, init_db
@@ -396,6 +397,7 @@ class RuntimeContainer:
 
 def create_runtime_container(settings: Optional[Settings] = None) -> RuntimeContainer:
     effective_settings = settings or get_settings()
+    scheduler_timezone = ZoneInfo(effective_settings.scheduler_timezone)
     default_feishu_chat_ids = _resolve_default_feishu_chat_ids(effective_settings)
     primary_feishu_receive_id = default_feishu_chat_ids[0] if default_feishu_chat_ids else ""
     engine = build_engine(effective_settings.database_url)
@@ -413,7 +415,7 @@ def create_runtime_container(settings: Optional[Settings] = None) -> RuntimeCont
         app_secret=effective_settings.feishu_app_secret,
         folder_token=effective_settings.feishu_doc_folder_token,
     )
-    message_builder = MarkdownDigestBuilder()
+    message_builder = MarkdownDigestBuilder(effective_settings.scheduler_timezone)
     summary_localizer = _build_summary_localizer(effective_settings)
 
     research_provider, resource_closers = _build_research_provider(effective_settings)
@@ -434,6 +436,7 @@ def create_runtime_container(settings: Optional[Settings] = None) -> RuntimeCont
         discovery_service=DiscoveryService(
             client=github_client,
             include_topics=effective_settings.topic_include,
+            scheduler_timezone=effective_settings.scheduler_timezone,
         ),
         snapshot_repository=snapshot_repository,
         detail_repository=detail_repository,
@@ -486,6 +489,7 @@ def create_runtime_container(settings: Optional[Settings] = None) -> RuntimeCont
         daily_job=daily_digest_job,
         weekly_cron=effective_settings.weekly_digest_cron,
         weekly_job=weekly_digest_job,
+        scheduler_timezone=scheduler_timezone,
     )
 
     detail_handler = DetailRequestHandler(

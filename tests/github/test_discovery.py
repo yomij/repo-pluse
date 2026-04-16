@@ -99,6 +99,25 @@ async def test_collect_candidates_queries_three_channels_and_merges_discovery_so
     assert candidates[1].discovery_sources == ["established_mover"]
 
 
+@pytest.mark.asyncio
+async def test_collect_candidates_uses_scheduler_timezone_for_date_cutoffs():
+    now = datetime(2026, 4, 15, 16, 30, tzinfo=timezone.utc)
+    client = _FakeGitHubClient(results_by_query={})
+    service = DiscoveryService(
+        client=client,
+        include_topics=["ai"],
+        scheduler_timezone="Asia/Shanghai",
+    )
+
+    await service.collect_candidates(now=now)
+
+    assert client.calls == [
+        ("topic:ai archived:false", 30, "updated", "desc"),
+        ("topic:ai archived:false created:>=2026-03-17 stars:>=10", 30, "stars", "desc"),
+        ("topic:ai archived:false pushed:>=2026-04-09 stars:>=50", 30, "stars", "desc"),
+    ]
+
+
 @respx.mock
 @pytest.mark.asyncio
 async def test_collect_candidates_returns_empty_when_no_topics():
