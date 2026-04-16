@@ -6,6 +6,8 @@ from typing import Optional
 from repo_pulse.digest.service import DailyDigest
 from repo_pulse.feishu.docs import extract_markdown_section
 
+DETAIL_SECTION_DIVIDER = "────────────"
+
 
 @dataclass(frozen=True)
 class RichTextPost:
@@ -74,32 +76,24 @@ class MarkdownDigestBuilder:
             trial = "基于历史缓存：仓库提供快速上手说明，建议查看详情文档确认最新试玩条件。"
 
         sections = [
-            "**是什么**",
-            intro or "信息不足以确认",
-            "**为什么最近火**",
-            why_now or "信息不足以确认",
-            "**是否能快速试玩**",
-            trial or "结论：信息不足以确认是否能快速试玩",
-            "**3分钟试玩路径**",
-            _compress_quickstart_steps(quickstart),
-            "**适合谁**",
-            _extract_fit_for(fit),
-            "**主要风险**",
-            _extract_main_risks(trial, blockers, risks),
+            ("🧭 **是什么**", _as_bullet_lines(intro or "信息不足以确认")),
+            ("🔥 **为什么最近火**", _as_bullet_lines(why_now or "信息不足以确认")),
+            (
+                "⚡ **是否能快速试玩**",
+                _as_bullet_lines(trial or "结论：信息不足以确认是否能快速试玩"),
+            ),
+            ("🚀 **3分钟试玩路径**", _as_plain_lines(_compress_quickstart_steps(quickstart))),
+            ("👥 **适合谁**", _as_bullet_lines(_extract_fit_for(fit))),
+            ("⚠️ **主要风险**", _as_bullet_lines(_extract_main_risks(trial, blockers, risks))),
         ]
         links = []
         if detail.doc_url:
-            links.append("[文档]({0})".format(detail.doc_url))
+            links.append("- [文档]({0})".format(detail.doc_url))
         if repo_url:
-            links.append("[仓库]({0})".format(repo_url))
-        sections.extend(
-            [
-                "**文档链接 + 仓库链接**",
-                " · ".join(links) if links else "暂无链接",
-            ]
-        )
+            links.append("- [仓库]({0})".format(repo_url))
+        sections.append(("🔗 **相关链接**", links or ["- 暂无链接"]))
 
-        markdown = "\n\n".join(section for section in sections if section).strip() or "暂无详情摘要。"
+        markdown = _render_detail_sections(sections)
         return RichTextPost(title="📌 {0}".format(detail.full_name), markdown=markdown)
 
 
@@ -155,7 +149,7 @@ def _compress_quickstart_steps(section: str, *, max_steps: int = 3) -> str:
 
     if not steps:
         return "信息不足以确认"
-    return "；".join("{0}. {1}".format(index, step) for index, step in enumerate(steps, start=1))
+    return "\n".join("{0}. {1}".format(index, step) for index, step in enumerate(steps, start=1))
 
 
 def _extract_fit_for(section: str) -> str:
@@ -185,7 +179,7 @@ def _extract_main_risks(
             blocker_lines.append(text)
 
     if blocker_lines:
-        return "；".join(blocker_lines[:2])
+        return "\n".join(blocker_lines[:2])
 
     risk_lines = []
     for line in (risks_section or "").splitlines():
@@ -193,9 +187,29 @@ def _extract_main_risks(
         if normalized.startswith("- "):
             risk_lines.append(normalized[2:].strip())
     if risk_lines:
-        return "；".join(risk_lines[:2])
+        return "\n".join(risk_lines[:2])
     for line in (trial_section or "").splitlines():
         normalized = line.strip()
         if normalized.startswith("结论："):
             return normalized[len("结论：") :].strip() or "信息不足以确认"
     return "信息不足以确认"
+
+
+def _render_detail_sections(sections: list[tuple[str, list[str]]]) -> str:
+    rendered: list[str] = []
+    for index, (title, lines) in enumerate(sections):
+        rendered.append(title)
+        rendered.extend(lines or ["- 信息不足以确认"])
+        if index < len(sections) - 1:
+            rendered.extend(["", DETAIL_SECTION_DIVIDER, ""])
+    return "\n".join(rendered).strip() or "暂无详情摘要。"
+
+
+def _as_bullet_lines(text: str) -> list[str]:
+    lines = _as_plain_lines(text)
+    return [line if line.startswith("- ") else "- {0}".format(line) for line in lines]
+
+
+def _as_plain_lines(text: str) -> list[str]:
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    return lines or ["信息不足以确认"]

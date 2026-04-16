@@ -1070,21 +1070,22 @@ async def test_runtime_container_handles_event_and_replies_with_detail_summary()
     assert feishu.reactions_removed == [("om-msg-1", "reaction-1")]
     assert feishu.sent_posts[0][0] == "chat-1"
     assert feishu.sent_posts[0][1] == "📌 acme/agent"
-    assert "**是什么**" in feishu.sent_posts[0][2]
-    assert "这是一个 agent 平台。" in feishu.sent_posts[0][2]
-    assert "**为什么最近火**" in feishu.sent_posts[0][2]
-    assert "社区增长很快。" in feishu.sent_posts[0][2]
-    assert "**是否能快速试玩**" in feishu.sent_posts[0][2]
-    assert "可以快速本地试玩" in feishu.sent_posts[0][2]
-    assert "**3分钟试玩路径**" in feishu.sent_posts[0][2]
+    assert "🧭 **是什么**" in feishu.sent_posts[0][2]
+    assert "- 这是一个 agent 平台。" in feishu.sent_posts[0][2]
+    assert "🔥 **为什么最近火**" in feishu.sent_posts[0][2]
+    assert "- 社区增长很快。" in feishu.sent_posts[0][2]
+    assert "⚡ **是否能快速试玩**" in feishu.sent_posts[0][2]
+    assert "- 结论：可以快速本地试玩" in feishu.sent_posts[0][2]
+    assert "🚀 **3分钟试玩路径**" in feishu.sent_posts[0][2]
     assert "安装依赖" in feishu.sent_posts[0][2]
-    assert "**适合谁**" in feishu.sent_posts[0][2]
-    assert "平台团队。" in feishu.sent_posts[0][2]
-    assert "**主要风险**" in feishu.sent_posts[0][2]
+    assert "👥 **适合谁**" in feishu.sent_posts[0][2]
+    assert "- 平台团队。" in feishu.sent_posts[0][2]
+    assert "⚠️ **主要风险**" in feishu.sent_posts[0][2]
     assert "缺少 API Key" in feishu.sent_posts[0][2]
-    assert "**文档链接 + 仓库链接**" in feishu.sent_posts[0][2]
-    assert "[文档](https://feishu.cn/docx/generated)" in feishu.sent_posts[0][2]
-    assert "[仓库](https://github.com/acme/agent)" in feishu.sent_posts[0][2]
+    assert "🔗 **相关链接**" in feishu.sent_posts[0][2]
+    assert "- [文档](https://feishu.cn/docx/generated)" in feishu.sent_posts[0][2]
+    assert "- [仓库](https://github.com/acme/agent)" in feishu.sent_posts[0][2]
+    assert feishu.sent_posts[0][2].count("────────────") == 6
 
 
 @pytest.mark.asyncio

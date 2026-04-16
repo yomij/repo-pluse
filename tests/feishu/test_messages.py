@@ -3,6 +3,8 @@ from types import SimpleNamespace
 from repo_pulse.digest.service import DailyDigest, DigestEntry
 from repo_pulse.feishu.messages import MarkdownDigestBuilder, RichTextPost
 
+DETAIL_SECTION_DIVIDER = "────────────"
+
 
 def test_markdown_digest_builder_renders_post_title_and_markdown_body():
     digest = DailyDigest(
@@ -102,23 +104,28 @@ def test_markdown_digest_builder_build_detail_post_uses_onboarding_sections():
     post = MarkdownDigestBuilder().build_detail_post(detail, repo_url="https://github.com/acme/agent")
 
     assert post.title == "📌 acme/agent"
-    assert "**是什么**" in post.markdown
-    assert "**为什么最近火**" in post.markdown
-    assert "**是否能快速试玩**" in post.markdown
-    assert "结论：可以快速本地试玩（预计耗时：3-10 分钟）" in post.markdown
-    assert "**3分钟试玩路径**" in post.markdown
+    assert "🧭 **是什么**" in post.markdown
+    assert "- 这是一个 agent 平台。" in post.markdown
+    assert "🔥 **为什么最近火**" in post.markdown
+    assert "- 社区增长很快。" in post.markdown
+    assert "⚡ **是否能快速试玩**" in post.markdown
+    assert "- 结论：可以快速本地试玩（预计耗时：3-10 分钟）" in post.markdown
+    assert "🚀 **3分钟试玩路径**" in post.markdown
     assert "1. 安装依赖：运行 `uv sync`。" in post.markdown
     assert "2. 启动示例：运行 `uv run python examples/demo.py`。" in post.markdown
     assert "3. 验证输出：观察日志包含 success 标记。" in post.markdown
+    assert "；2." not in post.markdown
     assert "额外步骤" not in post.markdown
-    assert "**适合谁**" in post.markdown
-    assert "平台团队。" in post.markdown
-    assert "**主要风险**" in post.markdown
-    assert "缺少 API Key" in post.markdown
+    assert "👥 **适合谁**" in post.markdown
+    assert "- 平台团队。" in post.markdown
+    assert "⚠️ **主要风险**" in post.markdown
+    assert "- 缺少 API Key：未设置环境变量会导致示例启动失败。（来源：README）" in post.markdown
     assert "依赖外部模型接口" not in post.markdown
-    assert "**文档链接 + 仓库链接**" in post.markdown
-    assert "[文档](https://feishu.cn/docx/doc-123)" in post.markdown
-    assert "[仓库](https://github.com/acme/agent)" in post.markdown
+    assert "🔗 **相关链接**" in post.markdown
+    assert "- [文档](https://feishu.cn/docx/doc-123)" in post.markdown
+    assert "- [仓库](https://github.com/acme/agent)" in post.markdown
+    assert " · " not in post.markdown
+    assert post.markdown.count(DETAIL_SECTION_DIVIDER) == 6
 
 
 def test_markdown_digest_builder_build_detail_post_risk_fallbacks_to_risks_section():
@@ -148,8 +155,8 @@ def test_markdown_digest_builder_build_detail_post_risk_fallbacks_to_risks_secti
 
     post = MarkdownDigestBuilder().build_detail_post(detail, repo_url=None)
 
-    assert "**主要风险**" in post.markdown
-    assert "依赖外部模型接口" in post.markdown
+    assert "⚠️ **主要风险**" in post.markdown
+    assert "- 依赖外部模型接口" in post.markdown
 
 
 def test_markdown_digest_builder_build_detail_post_risk_fallbacks_to_trial_verdict():
@@ -179,8 +186,8 @@ def test_markdown_digest_builder_build_detail_post_risk_fallbacks_to_trial_verdi
 
     post = MarkdownDigestBuilder().build_detail_post(detail, repo_url=None)
 
-    assert "**主要风险**" in post.markdown
-    assert "需要 API Key 才能完成试玩" in post.markdown
+    assert "⚠️ **主要风险**" in post.markdown
+    assert "- 需要 API Key 才能完成试玩（预计耗时：5-15 分钟）" in post.markdown
 
 
 def test_markdown_digest_builder_build_detail_post_supports_legacy_cached_sections():
@@ -205,9 +212,9 @@ def test_markdown_digest_builder_build_detail_post_supports_legacy_cached_sectio
 
     post = MarkdownDigestBuilder().build_detail_post(detail, repo_url="https://github.com/acme/agent")
 
-    assert "**是否能快速试玩**" in post.markdown
-    assert "基于历史缓存" in post.markdown
-    assert "**3分钟试玩路径**" in post.markdown
+    assert "⚡ **是否能快速试玩**" in post.markdown
+    assert "- 基于历史缓存" in post.markdown
+    assert "🚀 **3分钟试玩路径**" in post.markdown
     assert "1. 先运行官方 demo。" in post.markdown
-    assert "**适合谁**" in post.markdown
-    assert "适合平台团队。" in post.markdown
+    assert "👥 **适合谁**" in post.markdown
+    assert "- 适合平台团队。" in post.markdown
