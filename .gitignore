@@ -1,0 +1,15 @@
+.idea/
+.DS_Store
+.superpowers/
+.worktrees/
+memory/
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+data/*.db
+dist/
+build/
+*.egg-info/
+docs/superpowers/
