@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -2315,6 +2316,97 @@ def test_build_research_provider_uses_dashscope_when_selected(monkeypatch):
     assert captured["research_retry_backoff_seconds"] == 1
     assert captured["structurer_max_retries"] == 2
     assert captured["structurer_retry_backoff_seconds"] == 1
+
+
+def test_build_research_provider_uses_openai_base_url_when_configured(monkeypatch):
+    from repo_pulse.config import Settings
+    from repo_pulse.runtime import _build_research_provider
+
+    captured_client_kwargs = {}
+    captured_provider_kwargs = {}
+
+    class _FakeAsyncOpenAI:
+        def __init__(self, **kwargs):
+            captured_client_kwargs.update(kwargs)
+
+        async def close(self):
+            return None
+
+    class _FakeProvider:
+        def __init__(self, **kwargs):
+            captured_provider_kwargs.update(kwargs)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "openai",
+        SimpleNamespace(AsyncOpenAI=_FakeAsyncOpenAI),
+    )
+    monkeypatch.setattr("repo_pulse.runtime.OpenAIResearchProvider", _FakeProvider)
+
+    provider, closers = _build_research_provider(
+        Settings(
+            feishu_app_id="app-id",
+            feishu_app_secret="app-secret",
+            feishu_chat_ids=["chat-id"],
+            feishu_about_doc_url=_ABOUT_DOC_URL,
+            research_provider="openai",
+            openai_api_key="proxy-key",
+            openai_base_url="https://proxy.example.com/v1",
+            openai_model="gpt-5",
+            openai_reasoning_effort="high",
+            _env_file=None,
+        )
+    )
+
+    assert isinstance(provider, _FakeProvider)
+    assert captured_client_kwargs == {
+        "api_key": "proxy-key",
+        "base_url": "https://proxy.example.com/v1",
+    }
+    assert isinstance(captured_provider_kwargs["client"], _FakeAsyncOpenAI)
+    assert captured_provider_kwargs["model"] == "gpt-5"
+    assert captured_provider_kwargs["reasoning_effort"] == "high"
+    assert len(closers) == 1
+
+
+def test_build_research_provider_passes_none_base_url_when_blank(monkeypatch):
+    from repo_pulse.config import Settings
+    from repo_pulse.runtime import _build_research_provider
+
+    captured_client_kwargs = {}
+
+    class _FakeAsyncOpenAI:
+        def __init__(self, **kwargs):
+            captured_client_kwargs.update(kwargs)
+
+        async def close(self):
+            return None
+
+    monkeypatch.setitem(
+        sys.modules,
+        "openai",
+        SimpleNamespace(AsyncOpenAI=_FakeAsyncOpenAI),
+    )
+
+    provider, closers = _build_research_provider(
+        Settings(
+            feishu_app_id="app-id",
+            feishu_app_secret="app-secret",
+            feishu_chat_ids=["chat-id"],
+            feishu_about_doc_url=_ABOUT_DOC_URL,
+            research_provider="openai",
+            openai_api_key="proxy-key",
+            openai_base_url="   ",
+            _env_file=None,
+        )
+    )
+
+    assert provider is not None
+    assert captured_client_kwargs == {
+        "api_key": "proxy-key",
+        "base_url": None,
+    }
+    assert len(closers) == 1
 
 
 def test_build_research_provider_returns_disabled_when_dashscope_key_missing():

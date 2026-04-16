@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     feishu_event_verification_token: str = ""
     research_provider: str = "dashscope"
     openai_api_key: str = ""
+    openai_base_url: str = ""
     openai_model: str = "gpt-5"
     openai_reasoning_effort: str = "medium"
     dashscope_api_key: str = ""
