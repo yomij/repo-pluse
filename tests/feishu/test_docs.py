@@ -181,6 +181,61 @@ async def test_feishu_docs_client_reuses_document_and_replaces_children_on_secon
 
 
 @pytest.mark.asyncio
+async def test_feishu_docs_client_splits_children_create_requests_when_block_count_exceeds_limit():
+    create_document = _AsyncMethod(
+        lambda request, option: docx_v1.CreateDocumentResponse(
+            {"code": 0, "msg": "success", "data": {"document": {"document_id": "doc-123"}}}
+        )
+    )
+
+    def _create_children_response(request, option):
+        children = list(getattr(request.request_body, "children", []) or [])
+        if len(children) > 50:
+            return docx_v1.CreateDocumentBlockChildrenResponse(
+                {"code": 99992402, "msg": "field validation failed", "data": {}}
+            )
+        return docx_v1.CreateDocumentBlockChildrenResponse(
+            {"code": 0, "msg": "success", "data": {"children_id": ["blk-ok"]}}
+        )
+
+    create_children = _AsyncMethod(_create_children_response)
+    patch_public = _AsyncMethod(
+        lambda request, option: drive_v1.PatchPermissionPublicResponse(
+            {"code": 0, "msg": "success", "data": {"permission_public": {"link_share_entity": "tenant_editable"}}}
+        )
+    )
+    client = FeishuDocsClient(
+        app_id="app-id",
+        app_secret="app-secret",
+        oapi_client=_Namespace(
+            docx=_Namespace(
+                v1=_Namespace(
+                    document=_Namespace(acreate=create_document),
+                    document_block_children=_Namespace(acreate=create_children),
+                )
+            ),
+            drive=_Namespace(
+                v1=_Namespace(
+                    permission_public=_Namespace(apatch=patch_public),
+                )
+            ),
+        ),
+    )
+
+    markdown = "# 标题\n\n" + "\n".join("- 条目 {0}".format(index) for index in range(55))
+    doc_url = await client.upsert_project_doc("acme/agent", markdown)
+
+    assert doc_url == "https://feishu.cn/docx/doc-123"
+    assert len(create_children.calls) == 2
+    first_request = create_children.calls[0][0]
+    second_request = create_children.calls[1][0]
+    assert len(first_request.request_body.children) == 50
+    assert len(second_request.request_body.children) == 6
+    assert first_request.request_body.index == 0
+    assert second_request.request_body.index == 50
+
+
+@pytest.mark.asyncio
 async def test_feishu_docs_client_reuses_existing_doc_url_without_creating_new_document():
     get_children = _AsyncMethod(
         lambda request, option: docx_v1.GetDocumentBlockChildrenResponse(

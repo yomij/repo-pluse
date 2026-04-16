@@ -24,6 +24,7 @@ from repo_pulse.research.base import (
 _MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\((https?://[^)]+)\)")
 _DOC_PERMISSION_TYPE = "docx"
 _DEFAULT_LINK_SHARE_ENTITY = "tenant_editable"
+_MAX_CREATE_CHILDREN_PER_REQUEST = 50
 
 logger = logging.getLogger(__name__)
 
@@ -186,19 +187,28 @@ class FeishuDocsClient:
         if not blocks:
             return
 
-        response = await self._oapi_client.docx.v1.document_block_children.acreate(
-            docx_v1.CreateDocumentBlockChildrenRequest.builder()
-            .document_id(document_id)
-            .block_id(document_id)
-            .request_body(
-                docx_v1.CreateDocumentBlockChildrenRequestBody.builder()
-                .children(blocks)
-                .index(0)
+        for index in range(0, len(blocks), _MAX_CREATE_CHILDREN_PER_REQUEST):
+            chunk = blocks[index : index + _MAX_CREATE_CHILDREN_PER_REQUEST]
+            response = await self._oapi_client.docx.v1.document_block_children.acreate(
+                docx_v1.CreateDocumentBlockChildrenRequest.builder()
+                .document_id(document_id)
+                .block_id(document_id)
+                .request_body(
+                    docx_v1.CreateDocumentBlockChildrenRequestBody.builder()
+                    .children(chunk)
+                    .index(index)
+                    .build()
+                )
                 .build()
             )
-            .build()
-        )
-        self._raise_on_feishu_response_error(response, "create docs children")
+            self._raise_on_feishu_response_error(
+                response,
+                "create docs children (total_blocks={0}, batch_size={1}, index={2})".format(
+                    len(blocks),
+                    len(chunk),
+                    index,
+                ),
+            )
 
     async def _ensure_default_access(self, document_id: str) -> None:
         request = (
