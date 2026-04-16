@@ -262,6 +262,19 @@ def test_build_help_text_lists_all_supported_commands():
     assert "@机器人" in help_text
 
 
+def test_build_help_text_omits_about_section_without_doc_url():
+    from repo_pulse.details.request_parser import build_help_text
+
+    help_text = build_help_text(
+        default_top_k=5,
+        max_top_k=10,
+        about_doc_url="",
+    )
+
+    assert "5. 关于我" not in help_text
+    assert "[关于我介绍]" not in help_text
+
+
 def test_render_project_markdown_contains_required_sections():
     from repo_pulse.feishu.docs import render_project_markdown
 

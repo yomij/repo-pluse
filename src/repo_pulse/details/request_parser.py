@@ -199,35 +199,46 @@ def parse_repo_reference(text: str) -> Optional[str]:
 
 
 def build_help_text(default_top_k: int, max_top_k: int, about_doc_url: str) -> str:
-    return "\n".join(
+    lines = [
+        "🤖 可用命令",
+        "",
+        "1. `/a <repo|url|keyword>`",
+        "   `/analyze <repo|url|keyword>`",
+        "   分析项目详情，例如：`/a openai/openai-python`",
+        "",
+        "2. `/d [topN]`",
+        "   `/daily [topN]`",
+        "   触发日榜，例如：`/daily {0}`".format(default_top_k),
+        "",
+        "3. `/w [topN]`",
+        "   `/weekly [topN]`",
+        "   触发周榜，例如：`/weekly {0}`".format(default_top_k),
+        "",
+        "4. `/h`",
+        "   `/help`",
+        "   查看帮助",
+        "",
+    ]
+
+    if about_doc_url:
+        lines.extend(
+            [
+                "5. 关于我",
+                "   [关于我介绍]({0})".format(about_doc_url),
+                "",
+            ]
+        )
+
+    lines.extend(
         [
-            "🤖 可用命令",
-            "",
-            "1. `/a <repo|url|keyword>`",
-            "   `/analyze <repo|url|keyword>`",
-            "   分析项目详情，例如：`/a openai/openai-python`",
-            "",
-            "2. `/d [topN]`",
-            "   `/daily [topN]`",
-            "   触发日榜，例如：`/daily {0}`".format(default_top_k),
-            "",
-            "3. `/w [topN]`",
-            "   `/weekly [topN]`",
-            "   触发周榜，例如：`/weekly {0}`".format(default_top_k),
-            "",
-            "4. `/h`",
-            "   `/help`",
-            "   查看帮助",
-            "",
-            "5. 关于我",
-            "   [关于我介绍]({0})".format(about_doc_url),
-            "",
             "💬 也支持先 `@机器人` 再输入以上命令或仓库名。",
             "   `@机器人` 只是占位符，请以群里的实际机器人显示名为准。",
             "",
             "ℹ️ topN 范围：1 - {0}".format(max_top_k),
         ]
     )
+
+    return "\n".join(lines)
 
 
 def _parse_optional_top_k(

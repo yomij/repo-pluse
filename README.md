@@ -85,7 +85,7 @@ uv run python -m repo_pulse.cli run-digest --dry-run
 当前限制：
 
 - 若默认百炼未配置 `DASHSCOPE_API_KEY`，详情研究会返回明确失败信息，日报主链路仍可运行
-- `/h` 帮助中的“关于我”链接必须通过 `FEISHU_ABOUT_DOC_URL` 配置；代码里不内置默认地址
+- `/h` 帮助中的“关于我”链接可通过 `FEISHU_ABOUT_DOC_URL` 配置；留空时不会展示该入口，代码里不内置默认地址
 - 若配置了 `FEISHU_DOC_FOLDER_TOKEN`，详情文档会创建到指定文件夹；不配则创建到应用可写根目录
 - 长连接模式仍需在飞书开放平台订阅 `im.message.receive_v1` 并发布应用版本
 
@@ -119,7 +119,7 @@ DASHSCOPE_RESEARCH_RETRY_BACKOFF_SECONDS=1
 
 以下环境变量可用于控制详情缓存与仓库证据采样上限（括号内为默认值）：
 
-- `FEISHU_ABOUT_DOC_URL`（必填）：`/h` 帮助中“关于我介绍”的目标文档链接
+- `FEISHU_ABOUT_DOC_URL`（可选）：`/h` 帮助中“关于我介绍”的目标文档链接；留空时不展示该入口
 - `DETAIL_CACHE_TTL_SECONDS`（`86400`）：项目详情缓存 TTL（秒）
 - `DASHSCOPE_RESEARCH_MAX_RETRIES`（`2`）：研究报告阶段的最大重试次数
 - `DASHSCOPE_RESEARCH_RETRY_BACKOFF_SECONDS`（`1`）：研究报告阶段重试退避基数（秒）

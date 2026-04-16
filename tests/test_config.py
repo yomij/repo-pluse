@@ -1,6 +1,3 @@
-import pytest
-from pydantic import ValidationError
-
 from repo_pulse.config import Settings
 
 
@@ -49,11 +46,12 @@ def test_settings_parse_csv_lists_and_defaults(monkeypatch):
     assert settings.topic_include == ["ai", "llm", "agents", "devtools"]
 
 
-def test_settings_require_feishu_about_doc_url(monkeypatch):
+def test_settings_allow_missing_feishu_about_doc_url(monkeypatch):
     monkeypatch.setenv("FEISHU_APP_ID", "cli_app_id")
     monkeypatch.setenv("FEISHU_APP_SECRET", "cli_app_secret")
     monkeypatch.setenv("FEISHU_CHAT_ID", "oc_test_chat")
     monkeypatch.delenv("FEISHU_ABOUT_DOC_URL", raising=False)
 
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None)
+    settings = Settings(_env_file=None)
+
+    assert settings.feishu_about_doc_url == ""
