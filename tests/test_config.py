@@ -38,6 +38,8 @@ def test_settings_parse_csv_lists_and_defaults(monkeypatch):
     assert settings.dashscope_structurer_timeout_seconds == 600
     assert settings.dashscope_research_max_retries == 2
     assert settings.dashscope_research_retry_backoff_seconds == 1
+    assert settings.dashscope_structurer_max_retries == 2
+    assert settings.dashscope_structurer_retry_backoff_seconds == 1
     assert settings.research_readme_char_limit == 4000
     assert settings.research_release_limit == 3
     assert settings.research_commit_limit == 5

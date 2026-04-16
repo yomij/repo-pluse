@@ -48,6 +48,8 @@ class DashScopeDeepResearchProvider(ResearchProvider):
         structurer_timeout_seconds: int = 60,
         research_max_retries: int = 2,
         research_retry_backoff_seconds: int = 1,
+        structurer_max_retries: int = 2,
+        structurer_retry_backoff_seconds: int = 1,
     ):
         self.research_client = research_client
         self.structurer_client = structurer_client
@@ -58,6 +60,8 @@ class DashScopeDeepResearchProvider(ResearchProvider):
         self.structurer_timeout_seconds = structurer_timeout_seconds
         self.research_max_retries = max(research_max_retries, 0)
         self.research_retry_backoff_seconds = max(research_retry_backoff_seconds, 0)
+        self.structurer_max_retries = max(structurer_max_retries, 0)
+        self.structurer_retry_backoff_seconds = max(structurer_retry_backoff_seconds, 0)
 
     async def research(self, request: ResearchRequest) -> ResearchResult:
         started_at = time.perf_counter()
@@ -85,11 +89,17 @@ class DashScopeDeepResearchProvider(ResearchProvider):
             self.research_timeout_seconds,
         )
         try:
-            report_text, references = await self._collect_research_turn_with_retry(
+            report_text, references = await self._run_with_retry(
                 request,
-                report_messages,
-                output_format="model_summary_report",
+                stage="report_turn",
+                model=self.research_model,
+                max_retries=self.research_max_retries,
+                backoff_seconds=self.research_retry_backoff_seconds,
                 elapsed_ms_getter=_elapsed_ms,
+                operation=lambda: self._collect_research_turn(
+                    report_messages,
+                    output_format="model_summary_report",
+                ),
             )
         except requests.exceptions.RequestException as exc:
             logger.exception(
@@ -106,14 +116,8 @@ class DashScopeDeepResearchProvider(ResearchProvider):
                 model=self.research_model,
                 repo_url=request.repo_url,
                 stage="report_turn",
-                exception_type=_request_exception_type(exc),
-                root_exception_type=_root_exception_type(exc),
-                attempt=getattr(exc, "attempt", 1),
-                max_attempts=getattr(exc, "max_attempts", self.research_max_retries + 1),
-                partial_chars=getattr(exc, "partial_chars", 0),
-                partial_references=getattr(exc, "partial_references", 0),
-                chunk_count=getattr(exc, "chunk_count", 0),
                 elapsed_ms=_elapsed_ms(),
+                **_request_exception_metadata(exc),
                 message=str(exc),
             )
             raise RuntimeError("DashScope 深度调研请求超时或网络异常（研究报告阶段），请稍后重试。") from exc
@@ -132,14 +136,8 @@ class DashScopeDeepResearchProvider(ResearchProvider):
                 model=self.research_model,
                 repo_url=request.repo_url,
                 stage="report_turn",
-                exception_type=_request_exception_type(exc),
-                root_exception_type=_root_exception_type(exc),
-                attempt=getattr(exc, "attempt", 1),
-                max_attempts=getattr(exc, "max_attempts", self.research_max_retries + 1),
-                partial_chars=getattr(exc, "partial_chars", 0),
-                partial_references=getattr(exc, "partial_references", 0),
-                chunk_count=getattr(exc, "chunk_count", 0),
                 elapsed_ms=_elapsed_ms(),
+                **_request_exception_metadata(exc),
                 message=str(exc),
             )
             raise
@@ -172,7 +170,15 @@ class DashScopeDeepResearchProvider(ResearchProvider):
             self.structurer_timeout_seconds,
         )
         try:
-            payload = await self._structure_report(request, report_text, references)
+            payload = await self._run_with_retry(
+                request,
+                stage="structure_report",
+                model=self.structurer_model,
+                max_retries=self.structurer_max_retries,
+                backoff_seconds=self.structurer_retry_backoff_seconds,
+                elapsed_ms_getter=_elapsed_ms,
+                operation=lambda: self._structure_report(request, report_text, references),
+            )
             citations = self._build_citations(payload, references)
             result = parse_research_result_payload(
                 payload,
@@ -194,8 +200,8 @@ class DashScopeDeepResearchProvider(ResearchProvider):
                 model=self.structurer_model,
                 repo_url=request.repo_url,
                 stage="structure_report",
-                exception_type=type(exc).__name__,
                 elapsed_ms=_elapsed_ms(),
+                **_request_exception_metadata(exc),
                 message=str(exc),
             )
             raise RuntimeError("DashScope 结构化整理请求超时或网络异常（结构化阶段），请稍后重试。") from exc
@@ -266,24 +272,24 @@ class DashScopeDeepResearchProvider(ResearchProvider):
             output_format,
         )
 
-    async def _collect_research_turn_with_retry(
+    async def _run_with_retry(
         self,
         request: ResearchRequest,
-        messages: List[Dict[str, str]],
-        output_format: Optional[str],
+        stage: str,
+        model: str,
+        max_retries: int,
+        backoff_seconds: int,
         elapsed_ms_getter,
-    ) -> tuple[str, List[Dict[str, str]]]:
-        max_attempts = self.research_max_retries + 1
+        operation,
+    ):
+        max_attempts = max_retries + 1
         for attempt in range(1, max_attempts + 1):
             try:
-                return await self._collect_research_turn(
-                    messages,
-                    output_format=output_format,
-                )
+                return await operation()
             except requests.exceptions.RequestException as exc:
                 setattr(exc, "attempt", attempt)
                 setattr(exc, "max_attempts", max_attempts)
-                retryable = _is_retryable_report_exception(exc)
+                retryable = _is_retryable_transport_exception(exc)
                 will_retry = retryable and attempt < max_attempts
                 if will_retry:
                     log_research_event(
@@ -293,26 +299,21 @@ class DashScopeDeepResearchProvider(ResearchProvider):
                         research_run_id=request.research_run_id,
                         repo_full_name=request.full_name,
                         provider="dashscope",
-                        model=self.research_model,
+                        model=model,
                         repo_url=request.repo_url,
-                        stage="report_turn",
-                        exception_type=_request_exception_type(exc),
-                        root_exception_type=_root_exception_type(exc),
-                        attempt=attempt,
-                        max_attempts=max_attempts,
-                        partial_chars=getattr(exc, "partial_chars", 0),
-                        partial_references=getattr(exc, "partial_references", 0),
-                        chunk_count=getattr(exc, "chunk_count", 0),
+                        stage=stage,
                         elapsed_ms=elapsed_ms_getter(),
+                        **_request_exception_metadata(exc),
                         message=str(exc),
                     )
-                    await asyncio.sleep(self._retry_delay_seconds(attempt))
+                    await asyncio.sleep(self._retry_delay_seconds(backoff_seconds, attempt))
                     continue
                 raise
         raise RuntimeError("unreachable")
 
-    def _retry_delay_seconds(self, attempt: int) -> int:
-        return self.research_retry_backoff_seconds * attempt
+    @staticmethod
+    def _retry_delay_seconds(backoff_seconds: int, attempt: int) -> int:
+        return backoff_seconds * attempt
 
     def _collect_research_turn_sync(
         self,
@@ -493,7 +494,7 @@ def _structured_response_content(response: Any) -> str:
     return _message_content_to_text(message.get("content"))
 
 
-def _is_retryable_report_exception(exc: requests.exceptions.RequestException) -> bool:
+def _is_retryable_transport_exception(exc: requests.exceptions.RequestException) -> bool:
     candidate = getattr(exc, "original_exception", exc)
     return isinstance(
         candidate,
@@ -508,6 +509,18 @@ def _is_retryable_report_exception(exc: requests.exceptions.RequestException) ->
 def _request_exception_type(exc: requests.exceptions.RequestException) -> str:
     candidate = getattr(exc, "original_exception", exc)
     return type(candidate).__name__
+
+
+def _request_exception_metadata(exc: Exception) -> Dict[str, int | str]:
+    return {
+        "exception_type": _request_exception_type(exc),
+        "root_exception_type": _root_exception_type(exc),
+        "attempt": getattr(exc, "attempt", 1),
+        "max_attempts": getattr(exc, "max_attempts", 1),
+        "partial_chars": getattr(exc, "partial_chars", 0),
+        "partial_references": getattr(exc, "partial_references", 0),
+        "chunk_count": getattr(exc, "chunk_count", 0),
+    }
 
 
 def _root_exception_type(exc: Exception) -> str:

@@ -662,3 +662,117 @@ async def test_dashscope_provider_reports_partial_progress_when_retry_budget_exh
         and payload["chunk_count"] == 1
         for payload in payloads
     )
+
+
+@pytest.mark.asyncio
+async def test_dashscope_provider_retries_retryable_structurer_failures(caplog, monkeypatch):
+    from repo_pulse.research.dashscope_provider import DashScopeDeepResearchProvider
+
+    caplog.set_level(logging.INFO)
+    sleep_calls = []
+
+    async def _fake_sleep(seconds):
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr("repo_pulse.research.dashscope_provider.asyncio.sleep", _fake_sleep)
+
+    research_client = _FakeGenerationClient(
+        responses=[
+            [_Chunk("完整研究报告", references=[{"title": "README", "url": "https://github.com/acme/agent"}])],
+        ]
+    )
+    structurer_client = _FakeGenerationClient(
+        responses=[
+            requests.exceptions.ConnectionError("Connection reset by peer"),
+            _StructuredResponse(
+                json.dumps(
+                    _structured_payload(citations=[]),
+                    ensure_ascii=False,
+                )
+            ),
+        ]
+    )
+    provider = DashScopeDeepResearchProvider(
+        research_client=research_client,
+        structurer_client=structurer_client,
+        api_key="dash-key",
+        structurer_max_retries=2,
+        structurer_retry_backoff_seconds=1,
+    )
+
+    result = await provider.research(
+        ResearchRequest(
+            full_name="acme/agent",
+            repo_url="https://github.com/acme/agent",
+            research_run_id="run-structurer-retry-success",
+        )
+    )
+
+    payloads = [record.event_data for record in caplog.records if hasattr(record, "event_data")]
+    assert result.what_it_is == "AI agent framework"
+    assert len(structurer_client.calls) == 2
+    assert sleep_calls == [1]
+    assert any(
+        payload["event"] == "research.retry"
+        and payload["research_run_id"] == "run-structurer-retry-success"
+        and payload["stage"] == "structure_report"
+        and payload["attempt"] == 1
+        and payload["max_attempts"] == 3
+        and payload["exception_type"] == "ConnectionError"
+        for payload in payloads
+    )
+
+
+@pytest.mark.asyncio
+async def test_dashscope_provider_reports_structurer_retry_exhaustion(caplog, monkeypatch):
+    from repo_pulse.research.dashscope_provider import DashScopeDeepResearchProvider
+
+    caplog.set_level(logging.INFO)
+    sleep_calls = []
+
+    async def _fake_sleep(seconds):
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr("repo_pulse.research.dashscope_provider.asyncio.sleep", _fake_sleep)
+
+    research_client = _FakeGenerationClient(
+        responses=[
+            [_Chunk("完整研究报告")],
+        ]
+    )
+    structurer_client = _FakeGenerationClient(
+        responses=[
+            requests.exceptions.Timeout("Request timed out"),
+            requests.exceptions.Timeout("Request timed out"),
+        ]
+    )
+    provider = DashScopeDeepResearchProvider(
+        research_client=research_client,
+        structurer_client=structurer_client,
+        api_key="dash-key",
+        structurer_max_retries=1,
+        structurer_retry_backoff_seconds=1,
+    )
+
+    with pytest.raises(RuntimeError, match="结构化阶段"):
+        await provider.research(
+            ResearchRequest(
+                full_name="acme/agent",
+                repo_url="https://github.com/acme/agent",
+                research_run_id="run-structurer-retry-failed",
+            )
+        )
+
+    payloads = [record.event_data for record in caplog.records if hasattr(record, "event_data")]
+    assert len(structurer_client.calls) == 2
+    assert sleep_calls == [1]
+    assert any(
+        payload["event"] == "research.failed"
+        and payload["research_run_id"] == "run-structurer-retry-failed"
+        and payload["stage"] == "structure_report"
+        and payload["attempt"] == 2
+        and payload["max_attempts"] == 2
+        and payload["exception_type"] == "Timeout"
+        and isinstance(payload["elapsed_ms"], int)
+        for payload in payloads
+    )

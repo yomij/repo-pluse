@@ -564,6 +564,8 @@ def _build_research_provider(settings: Settings) -> tuple[ResearchProvider, list
                 structurer_timeout_seconds=settings.dashscope_structurer_timeout_seconds,
                 research_max_retries=settings.dashscope_research_max_retries,
                 research_retry_backoff_seconds=settings.dashscope_research_retry_backoff_seconds,
+                structurer_max_retries=settings.dashscope_structurer_max_retries,
+                structurer_retry_backoff_seconds=settings.dashscope_structurer_retry_backoff_seconds,
             ),
             [],
         )

@@ -130,6 +130,8 @@ DASHSCOPE_RESEARCH_TIMEOUT_SECONDS=600
 DASHSCOPE_STRUCTURER_TIMEOUT_SECONDS=600
 DASHSCOPE_RESEARCH_MAX_RETRIES=2
 DASHSCOPE_RESEARCH_RETRY_BACKOFF_SECONDS=1
+DASHSCOPE_STRUCTURER_MAX_RETRIES=2
+DASHSCOPE_STRUCTURER_RETRY_BACKOFF_SECONDS=1
 ```
 
 说明：
@@ -137,7 +139,7 @@ DASHSCOPE_RESEARCH_RETRY_BACKOFF_SECONDS=1
 - `qwen-deep-research` 负责联网深度调研
 - `qwen-plus` 负责把研究报告整理成系统内部需要的结构化 JSON
 - 默认超时为研究阶段 `600s`、结构化阶段 `600s`；如果你的网络或模型响应更慢，可以继续在 `.env` 里调大
-- 研究报告阶段默认会对可恢复的流式网络错误做 `2` 次有限重试，退避间隔默认为 `1s`、`2s`
+- 研究报告阶段和结构化阶段默认都会对可恢复的网络错误做 `2` 次有限重试，退避间隔默认为 `1s`、`2s`
 - 如需切回 OpenAI，可显式设置 `RESEARCH_PROVIDER=openai`
 - 详情调研提示词会注入“仓库一手证据”（README 摘要、近期提交、版本发布等）；缺失信息会明确标注“信息不足以确认”
 - 引用策略默认优先官方来源（仓库 / docs / blog / release notes），社区资料只作为补充
@@ -151,6 +153,8 @@ DASHSCOPE_RESEARCH_RETRY_BACKOFF_SECONDS=1
 - `DETAIL_CACHE_TTL_SECONDS`（`86400`）：项目详情缓存 TTL（秒）
 - `DASHSCOPE_RESEARCH_MAX_RETRIES`（`2`）：研究报告阶段的最大重试次数
 - `DASHSCOPE_RESEARCH_RETRY_BACKOFF_SECONDS`（`1`）：研究报告阶段重试退避基数（秒）
+- `DASHSCOPE_STRUCTURER_MAX_RETRIES`（`2`）：结构化阶段的最大重试次数
+- `DASHSCOPE_STRUCTURER_RETRY_BACKOFF_SECONDS`（`1`）：结构化阶段重试退避基数（秒）
 - `RESEARCH_README_CHAR_LIMIT`（`4000`）：README 截断字符上限
 - `RESEARCH_RELEASE_LIMIT`（`3`）：抓取最近 Release 的数量上限
 - `RESEARCH_COMMIT_LIMIT`（`5`）：抓取最近 Commit 的数量上限

@@ -2175,6 +2175,8 @@ def test_build_research_provider_uses_dashscope_when_selected(monkeypatch):
     assert captured["structurer_timeout_seconds"] == 600
     assert captured["research_max_retries"] == 2
     assert captured["research_retry_backoff_seconds"] == 1
+    assert captured["structurer_max_retries"] == 2
+    assert captured["structurer_retry_backoff_seconds"] == 1
 
 
 def test_build_research_provider_returns_disabled_when_dashscope_key_missing():

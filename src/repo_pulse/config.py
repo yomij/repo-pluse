@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     dashscope_structurer_timeout_seconds: int = 600
     dashscope_research_max_retries: int = 2
     dashscope_research_retry_backoff_seconds: int = 1
+    dashscope_structurer_max_retries: int = 2
+    dashscope_structurer_retry_backoff_seconds: int = 1
     research_readme_char_limit: int = 4000
     research_release_limit: int = 3
     research_commit_limit: int = 5
