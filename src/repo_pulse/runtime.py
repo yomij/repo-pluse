@@ -605,7 +605,11 @@ def _build_research_provider(settings: Settings) -> tuple[ResearchProvider, list
 
         from openai import AsyncOpenAI
 
-        client = AsyncOpenAI(api_key=settings.openai_api_key)
+        normalized_openai_base_url = settings.openai_base_url.strip() or None
+        client = AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            base_url=normalized_openai_base_url,
+        )
         closers = [client.close] if hasattr(client, "close") else []
         return (
             OpenAIResearchProvider(

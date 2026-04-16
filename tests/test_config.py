@@ -33,6 +33,10 @@ def test_settings_parse_csv_lists_and_defaults(monkeypatch):
     assert settings.feishu_event_verification_token == ""
     assert settings.research_provider == "dashscope"
     assert settings.dashscope_api_key == ""
+    assert settings.openai_api_key == ""
+    assert settings.openai_base_url == ""
+    assert settings.openai_model == "gpt-5"
+    assert settings.openai_reasoning_effort == "medium"
     assert settings.dashscope_model == "qwen-deep-research"
     assert settings.dashscope_structurer_model == "qwen-plus"
     assert settings.dashscope_research_timeout_seconds == 600

@@ -144,6 +144,22 @@ DASHSCOPE_STRUCTURER_RETRY_BACKOFF_SECONDS=1
 - 详情调研提示词会注入“仓库一手证据”（README 摘要、近期提交、版本发布等）；缺失信息会明确标注“信息不足以确认”
 - 引用策略默认优先官方来源（仓库 / docs / blog / release notes），社区资料只作为补充
 
+如需通过 OpenAI 兼容代理接入现有 `openai` provider，可配置：
+
+```bash
+RESEARCH_PROVIDER=openai
+OPENAI_API_KEY=your_proxy_key
+OPENAI_BASE_URL=https://your-proxy.example.com/v1
+OPENAI_MODEL=your-model-name
+OPENAI_REASONING_EFFORT=medium
+```
+
+说明：
+
+- `OPENAI_BASE_URL` 留空时默认直连 OpenAI
+- 推荐填写包含 `/v1` 的兼容根路径
+- 第三方代理必须兼容 OpenAI `Responses API`
+
 ## New Config
 
 以下环境变量可用于控制详情缓存与仓库证据采样上限（括号内为默认值）：
@@ -156,6 +172,7 @@ DASHSCOPE_STRUCTURER_RETRY_BACKOFF_SECONDS=1
 - `DASHSCOPE_RESEARCH_RETRY_BACKOFF_SECONDS`（`1`）：研究报告阶段重试退避基数（秒）
 - `DASHSCOPE_STRUCTURER_MAX_RETRIES`（`2`）：结构化阶段的最大重试次数
 - `DASHSCOPE_STRUCTURER_RETRY_BACKOFF_SECONDS`（`1`）：结构化阶段重试退避基数（秒）
+- `OPENAI_BASE_URL`（可选）：OpenAI 兼容代理的根地址；留空时使用 OpenAI SDK 默认地址
 - `RESEARCH_README_CHAR_LIMIT`（`4000`）：README 截断字符上限
 - `RESEARCH_RELEASE_LIMIT`（`3`）：抓取最近 Release 的数量上限
 - `RESEARCH_COMMIT_LIMIT`（`5`）：抓取最近 Commit 的数量上限
