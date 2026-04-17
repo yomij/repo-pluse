@@ -1,5 +1,6 @@
 from functools import lru_cache
 from typing import Annotated, List, Union
+from zoneinfo import ZoneInfo
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -36,9 +37,9 @@ class Settings(BaseSettings):
     research_readme_char_limit: int = 4000
     research_release_limit: int = 3
     research_commit_limit: int = 5
-    digest_cron: str = "30 9 * * 1-5"
     daily_digest_cron: str = "30 9 * * 1-5"
     weekly_digest_cron: str = "30 9 * * 1"
+    scheduler_timezone: str = "Asia/Shanghai"
     detail_cache_ttl_seconds: int = 86400
     daily_digest_cache_ttl_seconds: int = 7200
     weekly_digest_cache_ttl_seconds: int = 86400
@@ -73,6 +74,16 @@ class Settings(BaseSettings):
     @classmethod
     def validate_feishu_about_doc_url(cls, value: str) -> str:
         return (value or "").strip()
+
+    @field_validator("scheduler_timezone", mode="before")
+    @classmethod
+    def validate_scheduler_timezone(cls, value: str) -> str:
+        normalized = str(value or "").strip() or "Asia/Shanghai"
+        try:
+            ZoneInfo(normalized)
+        except Exception as exc:
+            raise ValueError("Invalid scheduler timezone: {0}".format(normalized)) from exc
+        return normalized
 
 
 @lru_cache

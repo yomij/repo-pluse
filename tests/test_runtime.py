@@ -2246,6 +2246,24 @@ def test_create_runtime_container_can_disable_group_mention_requirement():
     assert container.detail_handler.group_require_bot_mention is False
 
 
+def test_create_runtime_container_uses_scheduler_timezone_for_jobs():
+    from repo_pulse.config import Settings
+    from repo_pulse.runtime import create_runtime_container
+
+    container = create_runtime_container(
+        Settings(
+            feishu_app_id="app-id",
+            feishu_app_secret="app-secret",
+            database_url="sqlite:///:memory:",
+            scheduler_timezone="UTC",
+            _env_file=None,
+        )
+    )
+
+    assert str(container.scheduler.timezone) == "UTC"
+    assert {str(job.trigger.timezone) for job in container.scheduler.get_jobs()} == {"UTC"}
+
+
 def test_create_runtime_container_passes_detail_cache_and_evidence_limits(monkeypatch):
     from repo_pulse.config import Settings
     from repo_pulse.runtime import create_runtime_container

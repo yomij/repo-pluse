@@ -3,6 +3,7 @@ import logging
 import time
 from typing import Any, Optional, Sequence
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from repo_pulse.config import Settings, get_settings
 from repo_pulse.db import build_engine, init_db
@@ -494,6 +495,7 @@ def create_runtime_container(settings: Optional[Settings] = None) -> RuntimeCont
         daily_job=daily_digest_job,
         weekly_cron=effective_settings.weekly_digest_cron,
         weekly_job=weekly_digest_job,
+        scheduler_timezone=ZoneInfo(effective_settings.scheduler_timezone),
     )
 
     detail_handler = DetailRequestHandler(

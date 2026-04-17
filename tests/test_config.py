@@ -1,3 +1,5 @@
+import pytest
+
 from repo_pulse.config import Settings
 
 
@@ -16,6 +18,7 @@ def test_settings_parse_csv_lists_and_defaults(monkeypatch):
 
     assert settings.daily_digest_cron == "30 9 * * 1-5"
     assert settings.weekly_digest_cron == "30 9 * * 1"
+    assert settings.scheduler_timezone == "Asia/Shanghai"
     assert settings.digest_top_k == 10
     assert settings.pregen_top_n == 5
     assert settings.manual_digest_default_top_k == 5
@@ -83,3 +86,22 @@ def test_settings_can_disable_group_require_bot_mention_from_env(monkeypatch):
     settings = Settings(_env_file=None)
 
     assert settings.feishu_group_require_bot_mention is False
+
+
+def test_settings_scheduler_timezone_can_be_configured(monkeypatch):
+    monkeypatch.setenv("FEISHU_APP_ID", "cli_app_id")
+    monkeypatch.setenv("FEISHU_APP_SECRET", "cli_app_secret")
+    monkeypatch.setenv("SCHEDULER_TIMEZONE", "UTC")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.scheduler_timezone == "UTC"
+
+
+def test_settings_reject_invalid_scheduler_timezone(monkeypatch):
+    monkeypatch.setenv("FEISHU_APP_ID", "cli_app_id")
+    monkeypatch.setenv("FEISHU_APP_SECRET", "cli_app_secret")
+    monkeypatch.setenv("SCHEDULER_TIMEZONE", "Asia/Not-A-Real-City")
+
+    with pytest.raises(ValueError):
+        Settings(_env_file=None)
