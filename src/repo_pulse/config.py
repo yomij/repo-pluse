@@ -37,8 +37,8 @@ class Settings(BaseSettings):
     research_readme_char_limit: int = 4000
     research_release_limit: int = 3
     research_commit_limit: int = 5
-    daily_digest_cron: str = "30 9 * * 1-5"
-    weekly_digest_cron: str = "30 9 * * 1"
+    daily_digest_cron: str = "30 18 * * 1-5"
+    weekly_digest_cron: str = "30 18 * * 0"
     scheduler_timezone: str = "Asia/Shanghai"
     detail_cache_ttl_seconds: int = 86400
     daily_digest_cache_ttl_seconds: int = 7200

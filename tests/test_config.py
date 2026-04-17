@@ -16,8 +16,8 @@ def test_settings_parse_csv_lists_and_defaults(monkeypatch):
 
     settings = Settings(_env_file=None)
 
-    assert settings.daily_digest_cron == "30 9 * * 1-5"
-    assert settings.weekly_digest_cron == "30 9 * * 1"
+    assert settings.daily_digest_cron == "30 18 * * 1-5"
+    assert settings.weekly_digest_cron == "30 18 * * 0"
     assert settings.scheduler_timezone == "Asia/Shanghai"
     assert settings.digest_top_k == 10
     assert settings.pregen_top_n == 5

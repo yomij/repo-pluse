@@ -165,6 +165,9 @@ OPENAI_REASONING_EFFORT=medium
 以下环境变量可用于控制详情缓存与仓库证据采样上限（括号内为默认值）：
 
 - `FEISHU_CHAT_IDS`（可选）：默认定时广播群列表，使用逗号分隔；配置后日报/周榜会按该列表逐群推送
+- `DAILY_DIGEST_CRON`（`30 18 * * 1-5`）：日榜定时广播 cron；默认按 `Asia/Shanghai` 在周一到周五 `18:30` 推送
+- `WEEKLY_DIGEST_CRON`（`30 18 * * 0`）：周榜定时广播 cron；默认按 `Asia/Shanghai` 在周日 `18:30` 推送
+- `SCHEDULER_TIMEZONE`（`Asia/Shanghai`）：调度时区；会同时影响 cron 触发时间和榜单展示时间
 - `FEISHU_ABOUT_DOC_URL`（可选）：`/h` 帮助中“关于我介绍”的目标文档链接；留空时不展示该入口
 - `FEISHU_GROUP_REQUIRE_BOT_MENTION`（`true`）：群聊是否要求先真实 `@` 机器人再处理命令；设为 `false` 时仅放开群聊 slash 命令直输
 - `DETAIL_CACHE_TTL_SECONDS`（`86400`）：项目详情缓存 TTL（秒）
