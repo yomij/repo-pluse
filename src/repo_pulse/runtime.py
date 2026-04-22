@@ -443,6 +443,7 @@ def create_runtime_container(settings: Optional[Settings] = None) -> RuntimeCont
         discovery_service=DiscoveryService(
             client=github_client,
             include_topics=effective_settings.topic_include,
+            scheduler_timezone=effective_settings.scheduler_timezone,
         ),
         snapshot_repository=snapshot_repository,
         detail_repository=detail_repository,
@@ -463,6 +464,11 @@ def create_runtime_container(settings: Optional[Settings] = None) -> RuntimeCont
         },
         default_receive_ids=default_feishu_chat_ids,
         topic_exclude=effective_settings.topic_exclude,
+        stargazer_verifier=github_client,
+        daily_stargazer_verify_enabled=effective_settings.daily_stargazer_verify_enabled,
+        daily_stargazer_concurrency=effective_settings.daily_stargazer_concurrency,
+        daily_stargazer_page_size=effective_settings.daily_stargazer_page_size,
+        daily_stargazer_max_pages=effective_settings.daily_stargazer_max_pages,
     )
     daily_digest_job = DigestJob(
         pipeline=digest_pipeline,

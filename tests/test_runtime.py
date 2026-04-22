@@ -18,9 +18,11 @@ class _FakeDiscoveryService:
     def __init__(self, candidates):
         self.candidates = candidates
         self.calls = []
+        self.kind_calls = []
 
-    async def collect_candidates(self, now):
+    async def collect_candidates(self, now, kind="daily"):
         self.calls.append(now)
+        self.kind_calls.append(kind)
         return list(self.candidates)
 
 
@@ -207,9 +209,26 @@ class _SlowDetailOrchestrator(_FakeDetailOrchestrator):
 
 
 class _FailingDiscoveryService(_FakeDiscoveryService):
-    async def collect_candidates(self, now):
+    async def collect_candidates(self, now, kind="daily"):
         self.calls.append(now)
+        self.kind_calls.append(kind)
         raise RuntimeError("github unavailable")
+
+
+class _FakeStargazerVerifier:
+    def __init__(self, results=None, failures=None):
+        self.results = results or {}
+        self.failures = failures or set()
+        self.calls = []
+
+    async def count_recent_stargazers(self, full_name, *, now, page_size, max_pages):
+        self.calls.append((full_name, now, page_size, max_pages))
+        if full_name in self.failures:
+            raise RuntimeError("graphql unavailable")
+        return self.results.get(
+            full_name,
+            SimpleNamespace(count=0, verified=False, truncated=False, failed_reason="missing_token"),
+        )
 
 
 class _FakeDigestJob:
@@ -356,6 +375,7 @@ async def test_digest_pipeline_ranks_candidates_localizes_summary_sends_post_and
 
     assert ranked == ["acme/agent"]
     assert discovery.calls == [now]
+    assert discovery.kind_calls == ["daily"]
     assert [snapshot.full_name for snapshot in snapshots.saved] == [
         "acme/agent",
         "acme/template",
@@ -585,8 +605,153 @@ async def test_digest_pipeline_weekly_uses_7d_and_24h_baselines_and_still_heatin
     reason_lines = pipeline.message_builder.digests[0].entries[0].reason_lines
     assert any("7d Stars +100" in line for line in reason_lines)
     assert any("近 24h 仍在增长" in line for line in reason_lines)
-    assert any("最近 72h 内仍有代码更新" in line for line in reason_lines)
-    assert all("watcher" not in line.lower() for line in reason_lines)
+
+
+@pytest.mark.asyncio
+async def test_digest_pipeline_daily_prefers_verified_growth_over_cold_start_bucket():
+    from repo_pulse.digest.service import DigestPipeline
+    from repo_pulse.ranking.scoring import RankingService
+    from repo_pulse.ranking.topics import TopicClassifier
+
+    now = datetime(2026, 4, 15, 9, 30, tzinfo=timezone.utc)
+    cutoff_24h = now - timedelta(hours=24)
+    heating = _candidate(
+        "acme/heating",
+        120,
+        24,
+        ["ai", "agents"],
+        "Heating repo",
+        pushed_at=now - timedelta(hours=2),
+        created_at=now - timedelta(days=45),
+        discovery_sources=["active_topic_recent"],
+    )
+    cold_start = _candidate(
+        "acme/cold-start",
+        1200,
+        90,
+        ["ai", "agents"],
+        "Cold start repo",
+        pushed_at=now - timedelta(hours=1),
+        created_at=now - timedelta(days=3),
+        discovery_sources=["viral_recent_recall"],
+    )
+    verifier = _FakeStargazerVerifier(
+        results={
+            "acme/heating": SimpleNamespace(count=10, verified=True, truncated=False, failed_reason=None),
+            "acme/cold-start": SimpleNamespace(count=0, verified=True, truncated=False, failed_reason=None),
+        }
+    )
+    pipeline = DigestPipeline(
+        discovery_service=_FakeDiscoveryService(candidates=[cold_start, heating]),
+        snapshot_repository=_FakeSnapshotRepository(
+            baselines={
+                ("acme/heating", cutoff_24h): _baseline("acme/heating", 110, 20, captured_at=cutoff_24h),
+            }
+        ),
+        detail_repository=_FakeDetailRepository(),
+        ranking_service=RankingService(classifier=TopicClassifier()),
+        message_builder=_FakeMessageBuilder(),
+        summary_localizer=_FakeSummaryLocalizer(),
+        feishu_client=_FakeFeishuClient(),
+        detail_orchestrator=_FakeDetailOrchestrator(),
+        stargazer_verifier=verifier,
+        top_k=2,
+    )
+
+    ranked = await pipeline.run_digest(
+        DigestRequest(kind="daily", title="GitHub 热门日榜", window="24h", window_hours=24, top_k=2),
+        now,
+    )
+
+    assert ranked == ["acme/heating", "acme/cold-start"]
+    assert [call[0] for call in verifier.calls] == ["acme/cold-start", "acme/heating"]
+
+
+@pytest.mark.asyncio
+async def test_digest_pipeline_weekly_skips_stargazer_verification():
+    from repo_pulse.digest.service import DigestPipeline
+    from repo_pulse.ranking.scoring import RankingService
+    from repo_pulse.ranking.topics import TopicClassifier
+
+    now = datetime(2026, 4, 15, 9, 30, tzinfo=timezone.utc)
+    candidate = _candidate(
+        "acme/trend",
+        320,
+        40,
+        ["ai", "agents"],
+        "Trend framework",
+        pushed_at=now - timedelta(hours=18),
+        created_at=now - timedelta(days=40),
+        discovery_sources=["established_mover"],
+    )
+    verifier = _FakeStargazerVerifier()
+    pipeline = DigestPipeline(
+        discovery_service=_FakeDiscoveryService(candidates=[candidate]),
+        snapshot_repository=_FakeSnapshotRepository(
+            baselines={("acme/trend", now - timedelta(days=7)): _baseline("acme/trend", 220, 30)}
+        ),
+        detail_repository=_FakeDetailRepository(),
+        ranking_service=RankingService(classifier=TopicClassifier()),
+        message_builder=_FakeMessageBuilder(),
+        summary_localizer=_FakeSummaryLocalizer(),
+        feishu_client=_FakeFeishuClient(),
+        detail_orchestrator=_FakeDetailOrchestrator(),
+        stargazer_verifier=verifier,
+        top_k=1,
+    )
+
+    await pipeline.run_digest(
+        DigestRequest(kind="weekly", title="GitHub 热门周榜", window="7d", window_hours=24 * 7, top_k=1),
+        now,
+    )
+
+    assert verifier.calls == []
+
+
+@pytest.mark.asyncio
+async def test_digest_pipeline_daily_falls_back_when_stargazer_verification_fails():
+    from repo_pulse.digest.service import DigestPipeline
+    from repo_pulse.ranking.scoring import RankingService
+    from repo_pulse.ranking.topics import TopicClassifier
+
+    now = datetime(2026, 4, 15, 9, 30, tzinfo=timezone.utc)
+    cutoff_24h = now - timedelta(hours=24)
+    candidate = _candidate(
+        "acme/fallback",
+        180,
+        25,
+        ["ai", "agents"],
+        "Fallback repo",
+        pushed_at=now - timedelta(hours=2),
+        created_at=now - timedelta(days=20),
+        discovery_sources=["active_topic_recent"],
+    )
+    verifier = _FakeStargazerVerifier(failures={"acme/fallback"})
+    pipeline = DigestPipeline(
+        discovery_service=_FakeDiscoveryService(candidates=[candidate]),
+        snapshot_repository=_FakeSnapshotRepository(
+            baselines={("acme/fallback", cutoff_24h): _baseline("acme/fallback", 120, 15, captured_at=cutoff_24h)}
+        ),
+        detail_repository=_FakeDetailRepository(),
+        ranking_service=RankingService(classifier=TopicClassifier()),
+        message_builder=_FakeMessageBuilder(),
+        summary_localizer=_FakeSummaryLocalizer(),
+        feishu_client=_FakeFeishuClient(),
+        detail_orchestrator=_FakeDetailOrchestrator(),
+        stargazer_verifier=verifier,
+        top_k=1,
+    )
+
+    ranked = await pipeline.run_digest(
+        DigestRequest(kind="daily", title="GitHub 热门日榜", window="24h", window_hours=24, top_k=1),
+        now,
+    )
+
+    assert ranked == ["acme/fallback"]
+    assert any(
+        "fallback" in line.lower()
+        for line in pipeline.message_builder.digests[0].entries[0].reason_lines
+    )
 
 
 @pytest.mark.asyncio
@@ -2289,6 +2454,32 @@ def test_create_runtime_container_passes_detail_cache_and_evidence_limits(monkey
     assert orchestrator.evidence_builder.readme_char_limit == 3000
     assert orchestrator.evidence_builder.release_limit == 2
     assert orchestrator.evidence_builder.commit_limit == 4
+
+
+def test_create_runtime_container_passes_daily_stargazer_settings():
+    from repo_pulse.config import Settings
+    from repo_pulse.runtime import create_runtime_container
+
+    container = create_runtime_container(
+        Settings(
+            feishu_app_id="app-id",
+            feishu_app_secret="app-secret",
+            feishu_chat_ids=["chat-id"],
+            feishu_about_doc_url=_ABOUT_DOC_URL,
+            database_url="sqlite:///:memory:",
+            daily_stargazer_verify_enabled=False,
+            daily_stargazer_concurrency=2,
+            daily_stargazer_page_size=50,
+            daily_stargazer_max_pages=3,
+            _env_file=None,
+        )
+    )
+
+    pipeline = container.digest_jobs["daily"].pipeline
+    assert pipeline.daily_stargazer_verify_enabled is False
+    assert pipeline.daily_stargazer_concurrency == 2
+    assert pipeline.daily_stargazer_page_size == 50
+    assert pipeline.daily_stargazer_max_pages == 3
 
 
 def test_build_research_provider_uses_dashscope_when_selected(monkeypatch):

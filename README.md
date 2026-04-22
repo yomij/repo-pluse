@@ -56,6 +56,8 @@ uv run uvicorn repo_pulse.main:create_app --factory --host 0.0.0.0 --port 9527
 - 如需放开群聊里的裸 slash 命令，可设置 `FEISHU_GROUP_REQUIRE_BOT_MENTION=false`；该开关不会把群聊里的裸 `日榜` / 仓库关键词文本也一起放开
 - 榜单结果默认启用短期缓存：日榜 `2h`、周榜 `24h`，可通过 `DAILY_DIGEST_CACHE_TTL_SECONDS` / `WEEKLY_DIGEST_CACHE_TTL_SECONDS` 调整
 - 项目详情默认缓存 `24h`，可通过 `DETAIL_CACHE_TTL_SECONDS` 调整；过期后会重新研究并复用已有飞书文档
+- 日榜会优先按 GitHub GraphQL `starredAt` 统计真实 `24h stars`；只有在 `GITHUB_TOKEN` 缺失或 GraphQL 失败时，才会回退到本地 snapshot delta
+- 周榜仍沿用现有 `7d + 最近 24h` 的稳定趋势逻辑，不触发 GraphQL stargazer 验证
 
 ## Tests
 
@@ -168,6 +170,10 @@ OPENAI_REASONING_EFFORT=medium
 - `DAILY_DIGEST_CRON`（`30 18 * * 1-5`）：日榜定时广播 cron；默认按 `Asia/Shanghai` 在周一到周五 `18:30` 推送
 - `WEEKLY_DIGEST_CRON`（`30 18 * * 0`）：周榜定时广播 cron；默认按 `Asia/Shanghai` 在周日 `18:30` 推送
 - `SCHEDULER_TIMEZONE`（`Asia/Shanghai`）：调度时区；会同时影响 cron 触发时间和榜单展示时间
+- `DAILY_STARGAZER_VERIFY_ENABLED`（`true`）：是否为日榜开启 GitHub GraphQL `starredAt` 验证
+- `DAILY_STARGAZER_CONCURRENCY`（`4`）：日榜并发验证仓库的最大数量
+- `DAILY_STARGAZER_PAGE_SIZE`（`100`）：单次 GraphQL stargazer 拉取页大小
+- `DAILY_STARGAZER_MAX_PAGES`（`20`）：单个仓库日榜验证最多抓取的 stargazer 页数；超出时会以下界 `≥N` 展示
 - `FEISHU_ABOUT_DOC_URL`（可选）：`/h` 帮助中“关于我介绍”的目标文档链接；留空时不展示该入口
 - `FEISHU_GROUP_REQUIRE_BOT_MENTION`（`true`）：群聊是否要求先真实 `@` 机器人再处理命令；设为 `false` 时仅放开群聊 slash 命令直输
 - `DETAIL_CACHE_TTL_SECONDS`（`86400`）：项目详情缓存 TTL（秒）

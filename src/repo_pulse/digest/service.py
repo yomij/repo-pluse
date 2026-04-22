@@ -57,6 +57,11 @@ class DigestPipeline:
         max_cached_entries: Optional[int] = None,
         cache_ttl_by_kind: Optional[dict[str, int]] = None,
         default_receive_ids: Optional[Sequence[str]] = None,
+        stargazer_verifier=None,
+        daily_stargazer_verify_enabled: bool = True,
+        daily_stargazer_concurrency: int = 4,
+        daily_stargazer_page_size: int = 100,
+        daily_stargazer_max_pages: int = 20,
     ):
         self.discovery_service = discovery_service
         self.snapshot_repository = snapshot_repository
@@ -75,6 +80,11 @@ class DigestPipeline:
             for item in (default_receive_ids or [])
             if str(item).strip()
         ]
+        self.stargazer_verifier = stargazer_verifier
+        self.daily_stargazer_verify_enabled = daily_stargazer_verify_enabled
+        self.daily_stargazer_concurrency = max(int(daily_stargazer_concurrency or 1), 1)
+        self.daily_stargazer_page_size = max(int(daily_stargazer_page_size or 100), 1)
+        self.daily_stargazer_max_pages = max(int(daily_stargazer_max_pages or 1), 1)
         self.topic_exclude = {item.lower() for item in (topic_exclude or [])}
         self._last_repo_urls: dict[str, str] = {}
         self._last_digest_from_cache = False
@@ -175,9 +185,10 @@ class DigestPipeline:
         now: datetime,
         pre_generate_top_n: int,
     ) -> DailyDigest:
-        candidates = await self.discovery_service.collect_candidates(now)
+        candidates = await self.discovery_service.collect_candidates(now, kind=digest_request.kind)
         cutoff_24h, cutoff_7d, baseline_cutoffs = self._baseline_cutoffs(digest_request, now)
         ranked_entries = []
+        scored_candidates = []
         self._last_repo_urls = {}
 
         for candidate in candidates:
@@ -201,13 +212,34 @@ class DigestPipeline:
             )
             if self._is_excluded(candidate):
                 continue
+            scored_candidates.append((candidate, baselines))
 
+        verification_results = await self._verify_daily_stargazers(
+            digest_request=digest_request,
+            candidates=[candidate for candidate, _ in scored_candidates],
+            now=now,
+        )
+
+        for candidate, baselines in scored_candidates:
+            verification = verification_results.get(candidate.full_name)
+            verified_count = None
+            verified_truncated = False
+            verification_failed = False
+            if verification is not None:
+                if bool(getattr(verification, "verified", False)):
+                    verified_count = int(getattr(verification, "count", 0) or 0)
+                    verified_truncated = bool(getattr(verification, "truncated", False))
+                else:
+                    verification_failed = True
             scored = self.ranking_service.score(
                 kind=digest_request.kind,
                 candidate=candidate,
                 baseline_24h=baselines.get(cutoff_24h),
                 baseline_7d=baselines.get(cutoff_7d) if cutoff_7d is not None else None,
                 now=now,
+                verified_star_delta_24h=verified_count,
+                verified_truncated=verified_truncated,
+                verification_failed=verification_failed,
             )
             cached_detail = await asyncio.to_thread(
                 self.detail_repository.get, candidate.full_name
@@ -216,7 +248,9 @@ class DigestPipeline:
             self._last_repo_urls[candidate.full_name] = repo_url
             ranked_entries.append(
                 (
+                    scored.rank_bucket,
                     scored.score,
+                    scored.star_delta,
                     DigestEntry(
                         full_name=candidate.full_name,
                         category="/".join(scored.categories),
@@ -230,8 +264,8 @@ class DigestPipeline:
                 )
             )
 
-        ranked_entries.sort(key=lambda item: item[0], reverse=True)
-        cache_entries = [entry for _, entry in ranked_entries[: self.max_cached_entries]]
+        ranked_entries.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
+        cache_entries = [entry for _, _, _, entry in ranked_entries[: self.max_cached_entries]]
         await self._localize_summaries(cache_entries)
         await self._hydrate_doc_urls(cache_entries, pre_generate_top_n)
         selected_entries = self._clone_entries(cache_entries[: max(digest_request.top_k, 0)])
@@ -251,6 +285,53 @@ class DigestPipeline:
     def _is_excluded(self, candidate) -> bool:
         candidate_topics = {topic.lower() for topic in candidate.topics}
         return bool(candidate_topics.intersection(self.topic_exclude))
+
+    async def _verify_daily_stargazers(
+        self,
+        *,
+        digest_request: DigestRequest,
+        candidates: Sequence,
+        now: datetime,
+    ) -> dict[str, object]:
+        if (
+            digest_request.kind != "daily"
+            or not self.daily_stargazer_verify_enabled
+            or self.stargazer_verifier is None
+            or not candidates
+        ):
+            return {}
+
+        semaphore = asyncio.Semaphore(self.daily_stargazer_concurrency)
+
+        async def verify(candidate):
+            async with semaphore:
+                try:
+                    result = await self.stargazer_verifier.count_recent_stargazers(
+                        candidate.full_name,
+                        now=now,
+                        page_size=self.daily_stargazer_page_size,
+                        max_pages=self.daily_stargazer_max_pages,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Falling back to snapshot delta because stargazer verification failed for %s",
+                        candidate.full_name,
+                        exc_info=True,
+                    )
+                    result = type(
+                        "StargazerVerificationFallback",
+                        (),
+                        {
+                            "count": 0,
+                            "verified": False,
+                            "truncated": False,
+                            "failed_reason": "request_failed",
+                        },
+                    )()
+                return candidate.full_name, result
+
+        pairs = await asyncio.gather(*(verify(candidate) for candidate in candidates))
+        return dict(pairs)
 
     @staticmethod
     def _repo_url_for(full_name: str) -> str:

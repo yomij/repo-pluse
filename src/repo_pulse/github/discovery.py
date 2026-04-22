@@ -14,27 +14,36 @@ class DiscoveryService:
         client: GitHubClient,
         include_topics: list[str],
         scheduler_timezone: str = "Asia/Shanghai",
+        search_requests_per_window: int = 25,
+        search_window_seconds: float = 60.0,
+        sleep_func=None,
     ):
         self.client = client
         self.include_topics = include_topics
         self.scheduler_timezone = scheduler_timezone
+        self.search_requests_per_window = max(int(search_requests_per_window or 1), 1)
+        self.search_window_seconds = max(float(search_window_seconds or 0), 0.0)
+        self.sleep_func = sleep_func or asyncio.sleep
 
-    async def collect_candidates(self, now: datetime) -> list[RepositoryCandidate]:
+    async def collect_candidates(self, now: datetime, kind: str = "daily") -> list[RepositoryCandidate]:
         if not self.include_topics:
             return []
 
-        requests = self._build_requests(now)
-        results = await asyncio.gather(
-            *(
-                self.client.search_repositories(
-                    query=request["query"],
-                    per_page=request["per_page"],
-                    sort=request["sort"],
-                    order="desc",
+        requests = self._build_requests(now, kind=kind)
+        results = []
+        for start_index in range(0, len(requests), self.search_requests_per_window):
+            batch = requests[start_index : start_index + self.search_requests_per_window]
+            for request in batch:
+                results.append(
+                    await self.client.search_repositories(
+                        query=request["query"],
+                        per_page=request["per_page"],
+                        sort=request["sort"],
+                        order="desc",
+                    )
                 )
-                for request in requests
-            )
-        )
+            if start_index + self.search_requests_per_window < len(requests) and self.search_window_seconds > 0:
+                await self.sleep_func(self.search_window_seconds)
 
         deduped: dict[str, RepositoryCandidate] = {}
         for request, candidates in zip(requests, results):
@@ -47,8 +56,48 @@ class DiscoveryService:
                 )
         return list(deduped.values())
 
-    def _build_requests(self, now: datetime) -> list[dict[str, str | int]]:
+    def _build_requests(self, now: datetime, kind: str = "daily") -> list[dict[str, str | int]]:
         current = to_business_datetime(self._ensure_utc(now), self.scheduler_timezone)
+        if kind == "daily":
+            return self._build_daily_requests(current)
+        return self._build_weekly_requests(current)
+
+    def _build_daily_requests(self, current: datetime) -> list[dict[str, str | int]]:
+        created_cutoff = (current - timedelta(days=14)).date().isoformat()
+        pushed_cutoff = (current - timedelta(days=3)).date().isoformat()
+        requests: list[dict[str, str | int]] = []
+        for topic in self.include_topics:
+            requests.extend(
+                [
+                    {
+                        "source": "active_topic_recent",
+                        "query": f"topic:{topic} archived:false",
+                        "per_page": 15,
+                        "sort": "updated",
+                    },
+                    {
+                        "source": "new_hot_recent",
+                        "query": f"topic:{topic} archived:false created:>={created_cutoff} stars:>=5",
+                        "per_page": 15,
+                        "sort": "updated",
+                    },
+                    {
+                        "source": "established_active",
+                        "query": f"topic:{topic} archived:false pushed:>={pushed_cutoff} stars:>=30",
+                        "per_page": 15,
+                        "sort": "updated",
+                    },
+                    {
+                        "source": "viral_recent_recall",
+                        "query": f"topic:{topic} archived:false created:>={created_cutoff} stars:>=5",
+                        "per_page": 10,
+                        "sort": "stars",
+                    },
+                ]
+            )
+        return requests
+
+    def _build_weekly_requests(self, current: datetime) -> list[dict[str, str | int]]:
         created_cutoff = (current - timedelta(days=30)).date().isoformat()
         pushed_cutoff = (current - timedelta(days=7)).date().isoformat()
         requests: list[dict[str, str | int]] = []

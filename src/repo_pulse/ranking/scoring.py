@@ -15,6 +15,7 @@ class ScoredRepository:
     score: float
     star_delta: int
     fork_delta: int
+    rank_bucket: int = 0
     recent_star_delta_24h: int = 0
     reason: str = ""
     reason_lines: list[str] = field(default_factory=list)
@@ -33,6 +34,9 @@ class RankingService:
         now: datetime,
         baseline_24h: RepositorySnapshot | None = None,
         baseline_7d: RepositorySnapshot | None = None,
+        verified_star_delta_24h: int | None = None,
+        verified_truncated: bool = False,
+        verification_failed: bool = False,
     ) -> ScoredRepository:
         categories = self.classifier.classify(candidate)
         if kind == "daily":
@@ -41,6 +45,9 @@ class RankingService:
                 categories=categories,
                 baseline_24h=baseline_24h,
                 now=now,
+                verified_star_delta_24h=verified_star_delta_24h,
+                verified_truncated=verified_truncated,
+                verification_failed=verification_failed,
             )
         if kind == "weekly":
             return self._score_weekly(
@@ -59,37 +66,68 @@ class RankingService:
         categories: list[str],
         baseline_24h: RepositorySnapshot | None,
         now: datetime,
+        verified_star_delta_24h: int | None,
+        verified_truncated: bool,
+        verification_failed: bool,
     ) -> ScoredRepository:
-        star_delta_24h = self._delta(candidate.stars, baseline_24h.stars if baseline_24h else None)
+        snapshot_star_delta_24h = self._delta(candidate.stars, baseline_24h.stars if baseline_24h else None)
         fork_delta_24h = self._delta(candidate.forks, baseline_24h.forks if baseline_24h else None)
+        verified_available = verified_star_delta_24h is not None
+        if verified_available:
+            star_delta_24h = max(verified_star_delta_24h or 0, 0)
+            rank_bucket = 2 if star_delta_24h > 0 else 0
+        else:
+            star_delta_24h = snapshot_star_delta_24h
+            rank_bucket = 1 if star_delta_24h > 0 else 0
+
         relative_growth = 0.0
-        if baseline_24h is not None:
+        if verified_available:
+            previous_stars = max(candidate.stars - star_delta_24h, 0)
+            relative_growth = min(star_delta_24h / max(previous_stars, 25), 4.0)
+        elif baseline_24h is not None:
             relative_growth = min(star_delta_24h / max(baseline_24h.stars, 25), 4.0)
 
         freshness_points = self._daily_freshness_points(candidate, now)
         repo_age_days = self._repo_age_days(candidate, now)
         youth_points = self._daily_youth_points(repo_age_days)
         source_points = self._daily_source_points(candidate)
-        launch_points = self._daily_launch_points(candidate, baseline_24h, repo_age_days)
+        cold_start_points = self._daily_cold_start_points(
+            baseline_24h=baseline_24h,
+            repo_age_days=repo_age_days,
+            verified_available=verified_available,
+        )
         template_penalty = self.classifier.template_penalty(candidate)
 
         score = (
-            star_delta_24h * 0.6
-            + fork_delta_24h * 0.8
-            + relative_growth * 8
+            star_delta_24h * 1.0
+            + fork_delta_24h * 0.6
+            + relative_growth * 6
             + freshness_points
             + youth_points
             + source_points
-            + launch_points
+            + cold_start_points
             - template_penalty
         )
+        star_count_label = "≥{0}".format(star_delta_24h) if verified_truncated else "+{0}".format(star_delta_24h)
+        if verified_available:
+            growth_line = "⭐ 真实 24h Stars {0} · 🍴 Forks +{1}".format(
+                star_count_label,
+                fork_delta_24h,
+            )
+        elif verification_failed or baseline_24h is not None:
+            growth_line = "⭐ 24h Stars +{0} · 🍴 Forks +{1}（snapshot fallback）".format(
+                star_delta_24h,
+                fork_delta_24h,
+            )
+        else:
+            growth_line = "⭐ 24h Stars +0 · 🍴 Forks +0"
         reason_lines = [
-            "⭐ 24h Stars +{0} · 🍴 Forks +{1}".format(star_delta_24h, fork_delta_24h),
+            growth_line,
             "📊 相对增长 {0:.1f}%".format(relative_growth * 100),
         ]
         project_line = self._daily_project_line(
             baseline_missing=baseline_24h is None,
-            launch_points=launch_points,
+            cold_start_points=cold_start_points,
             repo_age_days=repo_age_days,
         )
         if project_line:
@@ -101,6 +139,7 @@ class RankingService:
             score=score,
             star_delta=star_delta_24h,
             fork_delta=fork_delta_24h,
+            rank_bucket=rank_bucket,
             reason=" | ".join(reason_lines),
             reason_lines=reason_lines,
             baseline_missing=baseline_24h is None,
@@ -164,6 +203,7 @@ class RankingService:
             score=score,
             star_delta=star_delta_7d,
             fork_delta=fork_delta_7d,
+            rank_bucket=1,
             recent_star_delta_24h=recent_star_delta_24h,
             reason=" | ".join(reason_lines),
             reason_lines=reason_lines,
@@ -220,21 +260,31 @@ class RankingService:
     @staticmethod
     def _daily_source_points(candidate: RepositoryCandidate) -> float:
         sources = set(candidate.discovery_sources)
-        if "new_hot" in sources:
-            return 4.0
-        if "active_topic" in sources:
-            return 2.0
-        return 0.0
+        points = 0.0
+        if "new_hot_recent" in sources or "new_hot" in sources:
+            points += 1.0
+        if "viral_recent_recall" in sources:
+            points += 0.5
+        if "active_topic_recent" in sources or "active_topic" in sources:
+            points += 0.5
+        return min(points, 2.0)
 
     @staticmethod
-    def _daily_launch_points(
-        candidate: RepositoryCandidate,
+    def _daily_cold_start_points(
+        *,
         baseline_24h: RepositorySnapshot | None,
         repo_age_days: float | None,
+        verified_available: bool,
     ) -> float:
-        if baseline_24h is not None or repo_age_days is None or repo_age_days > 30:
+        if verified_available or baseline_24h is not None or repo_age_days is None:
             return 0.0
-        return min(candidate.stars / max(repo_age_days, 3), 40) + min(candidate.forks, 30) * 0.3
+        if repo_age_days <= 7:
+            return 6.0
+        if repo_age_days <= 14:
+            return 4.0
+        if repo_age_days <= 30:
+            return 2.0
+        return 0.0
 
     def _weekly_freshness_points(self, candidate: RepositoryCandidate, now: datetime) -> float:
         age_hours = self._hours_since_push(candidate, now)
@@ -287,11 +337,11 @@ class RankingService:
     def _daily_project_line(
         *,
         baseline_missing: bool,
-        launch_points: float,
+        cold_start_points: float,
         repo_age_days: float | None,
     ) -> str | None:
-        if baseline_missing and launch_points > 0:
-            return "🆕 新项目，按首爆潜力加分"
+        if baseline_missing and cold_start_points > 0:
+            return "🆕 新项目，冷启动弱信号 +{0:g}".format(cold_start_points)
         if baseline_missing:
             return "🆕 首次入榜，按冷启动信号处理"
         if repo_age_days is not None and repo_age_days <= 14:

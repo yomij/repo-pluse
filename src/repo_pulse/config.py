@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     detail_cache_ttl_seconds: int = 86400
     daily_digest_cache_ttl_seconds: int = 7200
     weekly_digest_cache_ttl_seconds: int = 86400
+    daily_stargazer_verify_enabled: bool = True
+    daily_stargazer_concurrency: int = 4
+    daily_stargazer_page_size: int = 100
+    daily_stargazer_max_pages: int = 20
     digest_top_k: int = 10
     pregen_top_n: int = 5
     manual_digest_default_top_k: int = 5

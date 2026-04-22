@@ -3,6 +3,15 @@ import pytest
 from repo_pulse.config import Settings
 
 
+def test_env_example_includes_daily_stargazer_settings():
+    env_example = open(".env.example", "r", encoding="utf-8").read()
+
+    assert "DAILY_STARGAZER_VERIFY_ENABLED=" in env_example
+    assert "DAILY_STARGAZER_CONCURRENCY=" in env_example
+    assert "DAILY_STARGAZER_PAGE_SIZE=" in env_example
+    assert "DAILY_STARGAZER_MAX_PAGES=" in env_example
+
+
 def test_settings_parse_csv_lists_and_defaults(monkeypatch):
     monkeypatch.setenv("FEISHU_APP_ID", "cli_app_id")
     monkeypatch.setenv("FEISHU_APP_SECRET", "cli_app_secret")
@@ -54,6 +63,10 @@ def test_settings_parse_csv_lists_and_defaults(monkeypatch):
     assert settings.detail_cache_ttl_seconds == 86400
     assert settings.daily_digest_cache_ttl_seconds == 7200
     assert settings.weekly_digest_cache_ttl_seconds == 86400
+    assert settings.daily_stargazer_verify_enabled is True
+    assert settings.daily_stargazer_concurrency == 4
+    assert settings.daily_stargazer_page_size == 100
+    assert settings.daily_stargazer_max_pages == 20
     assert settings.topic_include == ["ai", "llm", "agents", "devtools"]
 
 

@@ -1,9 +1,21 @@
 import base64
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from pydantic import HttpUrl, TypeAdapter, ValidationError
 
 from repo_pulse.schemas import RepositoryCandidate, RepositoryMetadata
+
+UTC = timezone.utc
+
+
+@dataclass(frozen=True)
+class StargazerVerificationResult:
+    count: int = 0
+    verified: bool = False
+    truncated: bool = False
+    failed_reason: str | None = None
 
 
 class GitHubClient:
@@ -28,6 +40,19 @@ class GitHubClient:
             response = await client.get(path, params=params)
             if response.status_code == 404:
                 return None
+            response.raise_for_status()
+            return response.json()
+
+    async def _post_graphql(self, query: str, variables: dict):
+        async with httpx.AsyncClient(
+            base_url=self.base_url,
+            headers=self._headers(),
+            timeout=20.0,
+        ) as client:
+            response = await client.post(
+                "/graphql",
+                json={"query": query, "variables": variables},
+            )
             response.raise_for_status()
             return response.json()
 
@@ -63,6 +88,107 @@ class GitHubClient:
             )
             for item in payload.get("items", [])
         ]
+
+    async def count_recent_stargazers(
+        self,
+        full_name: str,
+        *,
+        now: datetime,
+        page_size: int = 100,
+        max_pages: int = 20,
+    ) -> StargazerVerificationResult:
+        if not self.token:
+            return StargazerVerificationResult(failed_reason="missing_token")
+
+        if "/" not in full_name:
+            return StargazerVerificationResult(failed_reason="invalid_full_name")
+
+        owner, name = full_name.split("/", 1)
+        cutoff = self._ensure_utc(now) - timedelta(hours=24)
+        page_size = max(1, min(int(page_size or 100), 100))
+        max_pages = max(1, int(max_pages or 1))
+        count = 0
+        after = None
+        crossed_cutoff = False
+
+        query = """
+        query RepoPulseRecentStargazers(
+          $owner: String!,
+          $name: String!,
+          $pageSize: Int!,
+          $after: String
+        ) {
+          repository(owner: $owner, name: $name) {
+            stargazers(
+              first: $pageSize,
+              after: $after,
+              orderBy: {field: STARRED_AT, direction: DESC}
+            ) {
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+              edges {
+                starredAt
+              }
+            }
+          }
+        }
+        """
+
+        try:
+            for page_index in range(max_pages):
+                payload = await self._post_graphql(
+                    query,
+                    {
+                        "owner": owner,
+                        "name": name,
+                        "pageSize": page_size,
+                        "after": after,
+                    },
+                )
+                if payload.get("errors"):
+                    return StargazerVerificationResult(
+                        count=count,
+                        failed_reason="graphql_errors",
+                    )
+
+                repository = ((payload.get("data") or {}).get("repository"))
+                if repository is None:
+                    return StargazerVerificationResult(failed_reason="not_found")
+                stargazers = repository.get("stargazers") or {}
+                edges = stargazers.get("edges") or []
+                for edge in edges:
+                    starred_at = self._parse_datetime(edge.get("starredAt"))
+                    if starred_at is None:
+                        continue
+                    if starred_at < cutoff:
+                        crossed_cutoff = True
+                        break
+                    count += 1
+
+                if crossed_cutoff:
+                    return StargazerVerificationResult(count=count, verified=True)
+
+                page_info = stargazers.get("pageInfo") or {}
+                has_next_page = bool(page_info.get("hasNextPage"))
+                after = page_info.get("endCursor")
+                if not has_next_page or not after:
+                    return StargazerVerificationResult(count=count, verified=True)
+
+                if page_index == max_pages - 1:
+                    return StargazerVerificationResult(
+                        count=count,
+                        verified=True,
+                        truncated=True,
+                    )
+        except (httpx.HTTPError, TypeError, ValueError):
+            return StargazerVerificationResult(
+                count=count,
+                failed_reason="request_failed",
+            )
+
+        return StargazerVerificationResult(count=count, verified=True)
 
     async def get_repository(self, full_name: str) -> RepositoryMetadata | None:
         payload = await self._get("/repos/{0}".format(full_name))
@@ -150,3 +276,21 @@ class GitHubClient:
             except Exception:
                 return ""
         return str(content)
+
+    @staticmethod
+    def _ensure_utc(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
+    @staticmethod
+    def _parse_datetime(value: object) -> datetime | None:
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            parsed = value
+        else:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)

@@ -79,12 +79,14 @@ def test_daily_ranking_prefers_higher_relative_growth_with_same_24h_star_gain():
         candidate=small_base,
         baseline_24h=_baseline_snapshot(stars=50, forks=20),
         now=now,
+        verified_star_delta_24h=100,
     )
     scored_large = service.score(
         kind="daily",
         candidate=large_base,
         baseline_24h=_baseline_snapshot(stars=1000, forks=20),
         now=now,
+        verified_star_delta_24h=100,
     )
 
     assert scored_small.star_delta == 100
@@ -94,33 +96,39 @@ def test_daily_ranking_prefers_higher_relative_growth_with_same_24h_star_gain():
     assert any("相对增长" in line for line in scored_small.reason_lines)
 
 
-def test_daily_ranking_rewards_new_cold_start_repo_over_old_repo_without_baseline():
+def test_daily_ranking_prefers_verified_growth_over_cold_start_with_higher_total_stars():
     service = RankingService(classifier=TopicClassifier())
     now = datetime(2026, 4, 15, 9, 30, tzinfo=UTC)
 
-    new_repo = _candidate(
-        full_name="acme/new-repo",
-        stars=320,
+    heating_repo = _candidate(
+        full_name="acme/heating-repo",
+        stars=120,
         forks=24,
-        created_at=now - timedelta(days=10),
-        discovery_sources=["new_hot"],
+        created_at=now - timedelta(days=45),
+        discovery_sources=["active_topic_recent"],
     )
-    old_repo = _candidate(
-        full_name="acme/old-repo",
-        stars=320,
-        forks=24,
-        created_at=now - timedelta(days=180),
-        discovery_sources=["new_hot"],
+    cold_start = _candidate(
+        full_name="acme/cold-start",
+        stars=1200,
+        forks=90,
+        created_at=now - timedelta(days=3),
+        discovery_sources=["viral_recent_recall"],
     )
 
-    scored_new = service.score(kind="daily", candidate=new_repo, baseline_24h=None, now=now)
-    scored_old = service.score(kind="daily", candidate=old_repo, baseline_24h=None, now=now)
+    scored_verified = service.score(
+        kind="daily",
+        candidate=heating_repo,
+        baseline_24h=_baseline_snapshot(stars=110, forks=20),
+        now=now,
+        verified_star_delta_24h=10,
+    )
+    scored_cold_start = service.score(kind="daily", candidate=cold_start, baseline_24h=None, now=now)
 
-    assert scored_new.baseline_missing is True
-    assert scored_old.baseline_missing is True
-    assert scored_new.score > scored_old.score
-    assert any("新项目" in line for line in scored_new.reason_lines)
-    assert any("首次入榜" in line for line in scored_old.reason_lines)
+    assert scored_verified.baseline_missing is False
+    assert scored_cold_start.baseline_missing is True
+    assert scored_verified.score > scored_cold_start.score
+    assert scored_verified.star_delta == 10
+    assert scored_cold_start.star_delta == 0
 
 
 def test_weekly_ranking_prefers_repo_still_growing_in_last_24h():
@@ -213,8 +221,31 @@ def test_missing_created_at_does_not_raise_and_adds_no_youth_or_cold_start_bonus
 
     scored = service.score(kind="daily", candidate=candidate, baseline_24h=None, now=now)
 
-    assert scored.score == pytest.approx(8.0)
+    assert scored.score == pytest.approx(6.5)
     assert all("新项目" not in line for line in scored.reason_lines)
+
+
+def test_daily_ranking_uses_snapshot_delta_when_verification_unavailable():
+    service = RankingService(classifier=TopicClassifier())
+    now = datetime(2026, 4, 15, 9, 30, tzinfo=UTC)
+    candidate = _candidate(
+        full_name="acme/fallback",
+        stars=180,
+        forks=20,
+        created_at=now - timedelta(days=20),
+        discovery_sources=["active_topic_recent"],
+    )
+
+    scored = service.score(
+        kind="daily",
+        candidate=candidate,
+        baseline_24h=_baseline_snapshot(stars=140, forks=15),
+        now=now,
+        verification_failed=True,
+    )
+
+    assert scored.star_delta == 40
+    assert any("fallback" in line.lower() for line in scored.reason_lines)
 
 
 def test_template_like_repositories_are_stably_penalized():
